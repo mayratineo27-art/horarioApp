@@ -208,6 +208,24 @@ app.post('/api/push/notification-hours', async (req, res) => {
   }
 });
 
+// Debug endpoint: devuelve si hay suscripción y configuración relevante
+app.get('/api/push/config', async (req, res) => {
+  if (!requirePushToken(req, res)) return;
+  try {
+    const config = await loadConfig();
+    res.json({
+      ok: true,
+      hasSubscription: !!config.subscription,
+      timezone: config.timezone,
+      notificationHourStart: config.notificationHourStart ?? 7,
+      notificationHourEnd: config.notificationHourEnd ?? 22,
+      scheduleCount: Array.isArray(config.schedule) ? config.schedule.length : 0,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Failed to read config' });
+  }
+});
+
 cron.schedule('* * * * *', async () => {
   try {
     const config = await loadConfig();
