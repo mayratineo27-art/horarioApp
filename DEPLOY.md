@@ -67,7 +67,7 @@ Esto genera la carpeta `dist/` lista para publicar en cualquier hosting estátic
 3. Conecta tu repositorio GitHub (o sube manualmente).
 4. Configura:
    - **Build Command**: `npm install`
-   - **Start Command**: `node server/index.ts` 
+   - **Start Command**: `npm run start:server`
    - **Port**: `8787` (o el que uses en `.env`)
 
 5. Environment Variables (en Settings):
