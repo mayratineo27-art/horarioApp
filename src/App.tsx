@@ -23,7 +23,9 @@ import {
   Plus,
   Trash2,
   Star,
-  Settings
+  Settings,
+  AlertTriangle,
+  ListTodo
 } from 'lucide-react';
 import { 
   INITIAL_SCHEDULE, 
@@ -39,6 +41,7 @@ import {
   syncSubscriptionToBackend,
   sendTestPush,
   syncNotificationHours,
+  scheduleNewNotification,
 } from './push';
 
 export default function App() {
@@ -106,6 +109,96 @@ export default function App() {
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; start: string; end: string } | null>(null);
+  const [checklistText, setChecklistText] = useState('');
+
+  const parseMinutes = (value: string) => {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const formatMinutes = (totalMinutes: number) => {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const getWeekMondayKey = (date = new Date()) => {
+    const copy = new Date(date);
+    const day = copy.getDay();
+    const offset = day === 0 ? -6 : 1 - day;
+    copy.setDate(copy.getDate() + offset);
+    return copy.toISOString().slice(0, 10);
+  };
+
+  const weeklyResetStorageKey = 'mya_dynamics_last_fixed_restore';
+
+  const restoreFixedCourses = () => {
+    setSchedule(prev => {
+      const restored = prev.map((day, idx) => {
+        const baseFixed = INITIAL_SCHEDULE[idx]?.activities.filter(activity => activity.isFixed || activity.esFijo) ?? [];
+        const currentFixedMap = new Map(day.activities.filter(activity => activity.isFixed || activity.esFijo).map(activity => [activity.id, activity]));
+        const currentCustom = day.activities.filter(activity => !(activity.isFixed || activity.esFijo));
+        const mergedFixed = baseFixed.map(activity => currentFixedMap.get(activity.id) || activity);
+        return { ...day, activities: [...mergedFixed, ...currentCustom].sort((a, b) => a.startTime.localeCompare(b.startTime)) };
+      });
+
+      localStorage.setItem('mya_dynamics_schedule', JSON.stringify(restored));
+      return restored;
+    });
+    setCompletedToday({});
+    setFiredNotifications({});
+    localStorage.setItem('mya_dynamics_completed', JSON.stringify({}));
+    localStorage.setItem('mya_dynamics_fired', JSON.stringify({}));
+  };
+
+  const maybeRestoreWeeklyFixedCourses = () => {
+    const now = new Date();
+    const isMondayAfterFive = now.getDay() === 1 && now.getHours() >= 5;
+    const mondayKey = getWeekMondayKey(now);
+    const lastRestoreKey = localStorage.getItem(weeklyResetStorageKey);
+
+    if (isMondayAfterFive && lastRestoreKey !== mondayKey) {
+      restoreFixedCourses();
+      localStorage.setItem(weeklyResetStorageKey, mondayKey);
+    }
+  };
+
+  const getNearestFreeBlock = (dayIndex: number, durationMinutes: number, desiredStart = 300) => {
+    const dayActivities = schedule[dayIndex].activities
+      .map(activity => ({ ...activity, start: parseMinutes(activity.startTime), end: parseMinutes(activity.endTime) }))
+      .sort((a, b) => a.start - b.start);
+
+    const opening = 300;
+    const closing = 1320;
+    const gaps: { start: number; end: number; distance: number }[] = [];
+    let cursor = opening;
+
+    for (const activity of dayActivities) {
+      if (activity.start - cursor >= durationMinutes) {
+        gaps.push({ start: cursor, end: activity.start, distance: Math.abs(cursor - desiredStart) });
+      }
+      cursor = Math.max(cursor, activity.end);
+    }
+
+    if (closing - cursor >= durationMinutes) {
+      gaps.push({ start: cursor, end: closing, distance: Math.abs(cursor - desiredStart) });
+    }
+
+    const bestGap = gaps.sort((left, right) => left.distance - right.distance)[0];
+    return bestGap ? `${formatMinutes(bestGap.start)} - ${formatMinutes(bestGap.end)}` : '05:00 - 22:00';
+  };
+
+  const detectConflict = (dayIndex: number, start: string, end: string, currentId?: string) => {
+    const newStart = parseMinutes(start);
+    const newEnd = parseMinutes(end);
+    return schedule[dayIndex].activities.find(activity => {
+      if (activity.id === currentId) return false;
+      const existingStart = parseMinutes(activity.startTime);
+      const existingEnd = parseMinutes(activity.endTime);
+      return newStart < existingEnd && newEnd > existingStart;
+    }) || null;
+  };
 
   // --- PERSISTENCE ---
   useEffect(() => {
@@ -121,6 +214,10 @@ export default function App() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    maybeRestoreWeeklyFixedCourses();
+  }, [currentTime]);
 
   useEffect(() => {
     registerServiceWorker().catch(() => {
@@ -142,6 +239,11 @@ export default function App() {
     }
 
     const onMessage = (ev: MessageEvent) => {
+
+  const currentSystemDayIndex = () => {
+    const day = new Date().getDay();
+    return day === 0 ? 6 : day - 1;
+  };
       try {
         const data = ev.data;
         if (data && data.type === 'play-sound' && audioRef.current) {
@@ -169,7 +271,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    syncScheduleToBackend({
+    scheduleNewNotification({
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       schedule,
     }).catch(() => {
@@ -339,6 +441,23 @@ export default function App() {
     const { name, start, end, emoji } = editorData;
     if (!name.trim()) return;
 
+    const checklist = checklistText
+      .split(/[\n,]/)
+      .map(item => item.trim())
+      .filter(Boolean);
+
+    const conflict = detectConflict(activeDayIndex, start, end, showEditor?.mode === 'edit' ? showEditor.activityId : undefined);
+    if (conflict) {
+      const duration = parseMinutes(end) - parseMinutes(start);
+      const suggestion = getNearestFreeBlock(activeDayIndex, duration, parseMinutes(start));
+      setConflictModal({
+        title: 'Conflicto de horario detectado',
+        message: `${name.trim()} choca con ${conflict.name} (${conflict.startTime} - ${conflict.endTime}).`,
+        suggestion: `Tiempo libre más cercano: ${suggestion}`,
+      });
+      return;
+    }
+
     setSchedule(prev => {
       const copy = [...prev];
       let activities = [...copy[activeDayIndex].activities];
@@ -346,7 +465,7 @@ export default function App() {
       if (showEditor?.mode === 'edit' && showEditor.activityId) {
         activities = activities.map(a => 
           a.id === showEditor.activityId 
-            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji } 
+            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id } 
             : a
         );
       } else {
@@ -356,7 +475,9 @@ export default function App() {
           startTime: start,
           endTime: end,
           category: Category.SPECIAL,
-          emoji
+          emoji,
+          courseId: `manual-${Date.now()}`,
+          checklist,
         };
         activities.push(newAct);
       }
@@ -384,9 +505,11 @@ export default function App() {
         end: activity.endTime,
         emoji: activity.emoji || '📍'
       });
+      setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
       setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
+      setChecklistText('');
       setShowEditor({ mode: 'add' });
     }
   };
@@ -456,9 +579,10 @@ export default function App() {
             <div className="flex items-center gap-2">
               <button 
                 onClick={handleEnableNotifications}
-                className={`p-3 sketch-border border-2 rounded-lg transition ${notificationsEnabled ? 'bg-indigo-100 border-indigo-900 text-indigo-900' : 'bg-slate-50 border-slate-300 text-slate-400'}`}
+                className={`p-3 sketch-border border-2 rounded-lg transition flex items-center gap-2 font-bold ${notificationsEnabled ? 'bg-indigo-100 border-indigo-900 text-indigo-900' : 'bg-yellow-100 border-yellow-900 text-yellow-900'}`}
               >
                 {notificationsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+                <span className="hidden sm:inline text-xs uppercase tracking-widest">{notificationsEnabled ? 'Alertas ON' : 'Activar Alertas'}</span>
               </button>
               <button
                 onClick={() => setShowNotificationHoursModal(true)}
@@ -641,6 +765,19 @@ export default function App() {
                        ))}
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-300 ml-2 flex items-center gap-2">
+                      <ListTodo className="w-4 h-4" />
+                      Checklist del curso
+                    </label>
+                    <textarea
+                      className="w-full min-h-28 bg-slate-50 border-2 border-indigo-900 p-4 rounded-xl focus:outline-none font-mono text-sm"
+                      value={checklistText}
+                      onChange={(e) => setChecklistText(e.target.value)}
+                      placeholder="Escribe una tarea por línea o separa con comas."
+                    />
+                  </div>
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
@@ -779,6 +916,59 @@ export default function App() {
                     className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-2 px-4 rounded-lg sketch-border border-2 border-indigo-900 transition"
                   >
                     Guardar
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Conflict Modal */}
+        <AnimatePresence>
+          {conflictModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/70 z-[120] flex items-center justify-center p-4"
+              onClick={() => setConflictModal(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 20 }}
+                className="paper-card sketch-border w-full max-w-md p-6 bg-white space-y-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-red-100 border-2 border-red-600 text-red-700 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-hand text-2xl font-bold text-red-700 leading-tight">{conflictModal.title}</h3>
+                    <p className="text-sm text-slate-600 font-semibold mt-1">{conflictModal.message}</p>
+                    <p className="text-sm text-indigo-900 font-bold mt-2">{conflictModal.suggestion}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setConflictModal(null)}
+                    className="flex-1 py-3 rounded-xl border-2 border-slate-300 font-bold text-slate-700 bg-white"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={() => {
+                      const suggestion = getNearestFreeBlock(activeDayIndex, parseMinutes(editorData.end) - parseMinutes(editorData.start), parseMinutes(editorData.start));
+                      const [suggestedStart, suggestedEnd] = suggestion.split(' - ');
+                      setEditorData(prev => ({ ...prev, start: suggestedStart, end: suggestedEnd }));
+                      setConflictModal(null);
+                      setNotification({ title: 'Bloque sugerido', message: `Se ajustó a ${suggestion}.`, type: 'info' });
+                    }}
+                    className="flex-1 py-3 rounded-xl border-2 border-indigo-900 bg-indigo-900 font-bold text-white"
+                  >
+                    Usar sugerencia
                   </button>
                 </div>
               </motion.div>

@@ -107,6 +107,8 @@ export async function loadConfig(): Promise<UserConfig> {
       schedule: data.schedule || [],
       subscription: data.subscription || null,
       sentByDate: data.sent_by_date || {},
+      notificationHourStart: data.notification_hour_start ?? 7,
+      notificationHourEnd: data.notification_hour_end ?? 22,
     };
   } catch (error) {
     console.error('Error loading config:', error);
@@ -129,6 +131,8 @@ export async function saveConfig(config: UserConfig): Promise<void> {
         schedule: config.schedule,
         subscription: config.subscription,
         sent_by_date: config.sentByDate,
+        notification_hour_start: config.notificationHourStart,
+        notification_hour_end: config.notificationHourEnd,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'id' }

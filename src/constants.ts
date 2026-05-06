@@ -15,9 +15,12 @@ export interface Activity {
   startTime: string;
   endTime: string;
   isFixed?: boolean;
+  esFijo?: boolean;
   isAcademic?: boolean;
   description?: string;
   emoji?: string;
+  courseId?: string;
+  checklist?: string[];
 }
 
 export interface DaySchedule {

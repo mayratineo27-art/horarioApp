@@ -100,6 +100,10 @@ export async function syncScheduleToBackend(payload: { timezone: string; schedul
   });
 }
 
+export async function scheduleNewNotification(payload: { timezone: string; schedule: unknown }) {
+  return syncScheduleToBackend(payload);
+}
+
 export async function sendTestPush() {
   const baseUrl = await getApiBaseUrl();
   const res = await fetch(`${baseUrl}/api/push/test`, {
