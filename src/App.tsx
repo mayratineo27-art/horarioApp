@@ -632,34 +632,35 @@ export default function App() {
         <AnimatePresence>
           {notification && (
             <motion.div
-              initial={{ y: 50, opacity: 0, scale: 0.9 }}
+              initial={{ y: 40, opacity: 0, scale: 0.95 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 50, opacity: 0, scale: 0.9 }}
-              className={`fixed bottom-8 left-6 right-6 paper-card text-white p-5 sketch-border z-[150] flex items-center gap-4 shadow-2xl ${
-                notification.type === 'error' ? 'bg-gradient-to-r from-red-500 to-red-600' :
-                notification.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
-                notification.type === 'info' ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
-                'bg-gradient-to-r from-rose-500 to-rose-600'
+              exit={{ y: 40, opacity: 0, scale: 0.95 }}
+              className={`fixed bottom-6 left-4 right-4 max-w-3xl mx-auto text-white p-5 rounded-xl z-[220] flex items-center gap-4 shadow-2xl border-0 ${
+                notification.type === 'error' ? 'bg-red-700' :
+                notification.type === 'success' ? 'bg-green-700' :
+                notification.type === 'info' ? 'bg-blue-700' :
+                'bg-rose-700'
               }`}
             >
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0 animate-pulse">
+              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
                 {notification.type === 'error' ? (
-                  <X className="w-6 h-6 text-red-600 font-bold" />
+                  <X className="w-6 h-6 text-red-700 font-extrabold" />
                 ) : notification.type === 'success' ? (
-                  <CheckCircle2 className="w-6 h-6 text-green-600 font-bold" />
+                  <CheckCircle2 className="w-6 h-6 text-green-700 font-extrabold" />
                 ) : (
-                  <Bell className="w-6 h-6 text-rose-600 font-bold" />
+                  <Bell className="w-6 h-6 text-rose-700 font-extrabold" />
                 )}
               </div>
               <div className="flex-1">
-                <p className="font-hand text-lg font-bold leading-tight text-white drop-shadow-lg">{notification.title}</p>
-                <p className="text-sm text-white/90 font-semibold drop-shadow-md">{notification.message}</p>
+                <p className="font-hand text-lg sm:text-xl font-extrabold leading-tight text-white drop-shadow-md">{notification.title}</p>
+                <p className="text-base sm:text-lg text-white font-semibold drop-shadow-sm">{notification.message}</p>
               </div>
               <button 
                 onClick={() => setNotification(null)} 
-                className="text-white hover:text-white/70 transition"
+                className="text-white hover:opacity-90 transition ml-2"
+                aria-label="Cerrar notificación"
               >
-                <X className="w-5 h-5 font-bold" />
+                <X className="w-5 h-5 font-extrabold" />
               </button>
             </motion.div>
           )}
