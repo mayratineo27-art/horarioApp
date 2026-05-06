@@ -105,6 +105,7 @@ export default function App() {
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   // --- PERSISTENCE ---
   useEffect(() => {
@@ -125,6 +126,46 @@ export default function App() {
     registerServiceWorker().catch(() => {
       // Silent fail: app still works with local notifications.
     });
+  }, []);
+
+  // Setup audio and service worker message listener for playing sound
+  useEffect(() => {
+    // create audio element once
+    if (!audioRef.current) {
+      try {
+        audioRef.current = new Audio('/magic.wav');
+        audioRef.current.preload = 'auto';
+        audioRef.current.volume = 0.7;
+      } catch (e) {
+        audioRef.current = null;
+      }
+    }
+
+    const onMessage = (ev: MessageEvent) => {
+      try {
+        const data = ev.data;
+        if (data && data.type === 'play-sound' && audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play().catch(() => {});
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+      navigator.serviceWorker.addEventListener('message', onMessage as any);
+    }
+
+    return () => {
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.removeEventListener) {
+          navigator.serviceWorker.removeEventListener('message', onMessage as any);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -176,6 +217,13 @@ export default function App() {
               message: message,
               activityId: activity.id
             });
+            // play local sound when app is open
+            try {
+              if (audioRef.current) {
+                audioRef.current.currentTime = 0;
+                audioRef.current.play().catch(() => {});
+              }
+            } catch {}
             setFiredNotifications(prev => ({ ...prev, [key]: true }));
             // In a real Android environment, check Notification API
             if ('Notification' in window && Notification.permission === 'granted') {
@@ -737,6 +785,15 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Floating settings button for mobile (always visible) */}
+        <button
+          onClick={() => setShowNotificationHoursModal(true)}
+          aria-label="Ajustes de notificaciones"
+          className="fixed bottom-6 right-6 z-50 bg-yellow-500 hover:bg-yellow-400 text-yellow-900 p-4 rounded-full shadow-xl border-2 border-yellow-700"
+        >
+          <Settings className="w-6 h-6" />
+        </button>
 
       </div>
 
