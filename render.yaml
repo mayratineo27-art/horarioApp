@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: horarioapp
+    runtime: docker
+    region: ohio
+    plan: free
+    dockerfile: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: "8787"
+      - key: STORAGE_MODE
+        value: "supabase"
+      - key: PUSH_API_TOKEN
+        value: "mya_2026_9fJ2kL8pQw7xZr4nT6yV3bH1"
+      - key: VAPID_SUBJECT
+        value: "mailto:tu-correo@dominio.com"
+      - key: VAPID_PUBLIC_KEY
+        value: "BMcuS-yIRbj3xk4JkAgMEPbOWZayZpHu-XwPNEptItFnBflPcfVUKRfrZ5DiQQMwwBDuZR4tQdjygVUc0d6qUzQ"
+      - key: VAPID_PRIVATE_KEY
+        value: "7uKtaNIofp0XN5GU8-bldAZnx5EarT6by6THDPDmtw0"
+      - key: SUPABASE_URL
+        value: "https://pxwurgeoqiygcyggummh.supabase.co"
+      - key: SUPABASE_ANON_KEY
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4d3VyZ2VvcWl5Z2N5Z2d1bW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMjc5NzksImV4cCI6MjA5MzYwMzk3OX0.d8NkIHhRbm_8dbG9vSf-L3R91Of6290owQSex_n5kfw"
