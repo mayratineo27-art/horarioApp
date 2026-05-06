@@ -8,6 +8,8 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/re
 import { 
   Calendar, 
   Clock, 
+  Menu,
+  ChevronLeft,
   RotateCcw, 
   X, 
   Zap, 
@@ -25,7 +27,10 @@ import {
   Star,
   Settings,
   AlertTriangle,
-  ListTodo
+  ListTodo,
+  GraduationCap,
+  CheckSquare,
+  CirclePlus,
 } from 'lucide-react';
 import { 
   INITIAL_SCHEDULE, 
@@ -42,7 +47,30 @@ import {
   sendTestPush,
   syncNotificationHours,
   scheduleNewNotification,
+  loadCoursesFromBackend,
+  syncCoursesToBackend,
+  saveCourseChecklistToBackend,
 } from './push';
+
+type DrawerView = 'horario' | 'mis-cursos';
+
+type CourseTaskItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+type CourseCard = {
+  courseCode: string;
+  title: string;
+  emoji: string;
+  category: Category;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  blocks: Array<{ day: string; startTime: string; endTime: string }>;
+  checklist: CourseTaskItem[];
+};
 
 export default function App() {
   // --- STATE ---
@@ -104,6 +132,12 @@ export default function App() {
   const [notificationHourStart, setNotificationHourStart] = useState(7);
   const [notificationHourEnd, setNotificationHourEnd] = useState(22);
   const [showNotificationHoursModal, setShowNotificationHoursModal] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerView, setDrawerView] = useState<DrawerView>('horario');
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
+  const [courseChecklists, setCourseChecklists] = useState<Record<string, CourseTaskItem[]>>({});
+  const [newCourseTask, setNewCourseTask] = useState('');
+  const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
@@ -130,6 +164,20 @@ export default function App() {
     copy.setDate(copy.getDate() + offset);
     return copy.toISOString().slice(0, 10);
   };
+
+  const currentSystemDayIndex = () => {
+    const day = new Date().getDay();
+    return day === 0 ? 6 : day - 1;
+  };
+
+  const extractCourseCode = (name: string) => {
+    const codeMatch = name.match(/\bIS-\d+\b/);
+    if (codeMatch) return codeMatch[0];
+    const parenMatch = name.match(/\((IS-\d+)\)/);
+    return parenMatch ? parenMatch[1] : null;
+  };
+
+  const stripCourseCode = (name: string) => name.replace(/\s*\(IS-\d+\)/, '').trim();
 
   const weeklyResetStorageKey = 'mya_dynamics_last_fixed_restore';
 
@@ -200,6 +248,73 @@ export default function App() {
     }) || null;
   };
 
+  const courseCards = useMemo<CourseCard[]>(() => {
+    const cards = new Map<string, CourseCard>();
+
+    schedule.forEach(day => {
+      day.activities.forEach(activity => {
+        const courseCode = activity.courseId || extractCourseCode(activity.name);
+        if (!courseCode) return;
+
+        const title = stripCourseCode(activity.name);
+        const existing = cards.get(courseCode);
+        const checklist = courseChecklists[courseCode] || [];
+        const nextCard: CourseCard = existing || {
+          courseCode,
+          title,
+          emoji: activity.emoji || '📘',
+          category: activity.category,
+          dayOfWeek: day.day,
+          startTime: activity.startTime,
+          endTime: activity.endTime,
+          blocks: [],
+          checklist,
+        };
+
+        nextCard.emoji = nextCard.emoji || activity.emoji || '📘';
+        nextCard.blocks.push({ day: day.day, startTime: activity.startTime, endTime: activity.endTime });
+        nextCard.dayOfWeek = nextCard.dayOfWeek || day.day;
+        nextCard.startTime = nextCard.startTime || activity.startTime;
+        nextCard.endTime = nextCard.endTime || activity.endTime;
+        nextCard.checklist = checklist;
+        cards.set(courseCode, nextCard);
+      });
+    });
+
+    return Array.from(cards.values()).sort((left, right) => left.courseCode.localeCompare(right.courseCode));
+  }, [schedule, courseChecklists]);
+
+  const selectedCourse = courseCards.find(course => course.courseCode === selectedCourseCode) || null;
+
+  const selectedCourseTasks = selectedCourse ? (courseChecklists[selectedCourse.courseCode] || selectedCourse.checklist || []) : [];
+
+  const persistCourseTasks = async (courseCode: string, nextTasks: CourseTaskItem[]) => {
+    setCourseChecklists(prev => ({ ...prev, [courseCode]: nextTasks }));
+    try {
+      await saveCourseChecklistToBackend(courseCode, nextTasks, nextTasks.length > 0 && nextTasks.every(task => task.done));
+    } catch (error) {
+      setNotification({ title: '⚠️ Sincronización pendiente', message: 'Las tareas se guardaron localmente, pero el backend no respondió.', type: 'error' });
+      setTimeout(() => setNotification(null), 3500);
+    }
+  };
+
+  const addCourseTask = async () => {
+    if (!selectedCourse || !newCourseTask.trim()) return;
+    const nextTasks = [...selectedCourseTasks, { id: `task-${Date.now()}`, text: newCourseTask.trim(), done: false }];
+    setNewCourseTask('');
+    await persistCourseTasks(selectedCourse.courseCode, nextTasks);
+  };
+
+  const toggleCourseTask = async (courseCode: string, taskId: string) => {
+    const nextTasks = (courseChecklists[courseCode] || []).map(task => task.id === taskId ? { ...task, done: !task.done } : task);
+    await persistCourseTasks(courseCode, nextTasks);
+  };
+
+  const deleteCourseTask = async (courseCode: string, taskId: string) => {
+    const nextTasks = (courseChecklists[courseCode] || []).filter(task => task.id !== taskId);
+    await persistCourseTasks(courseCode, nextTasks);
+  };
+
   // --- PERSISTENCE ---
   useEffect(() => {
     localStorage.setItem('mya_dynamics_schedule', JSON.stringify(schedule));
@@ -225,6 +340,51 @@ export default function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const hydrateCourses = async () => {
+      try {
+        const payload = courseCards.map(course => ({
+          courseCode: course.courseCode,
+          name: course.title,
+          category: course.category,
+          dayOfWeek: course.dayOfWeek,
+          startTime: course.startTime,
+          endTime: course.endTime,
+          esFijo: true,
+          isExercise: course.emoji === '💪',
+          emoji: course.emoji,
+          checklist: courseChecklists[course.courseCode] || course.checklist || [],
+          completed: (courseChecklists[course.courseCode] || []).length > 0 && (courseChecklists[course.courseCode] || []).every(task => task.done),
+        }));
+
+        if (payload.length > 0) {
+          setCourseSyncStatus('syncing');
+          await syncCoursesToBackend({ courses: payload });
+          const response = await loadCoursesFromBackend();
+          const nextCourseMap: Record<string, CourseTaskItem[]> = {};
+          const loadedCourses = response?.courses || [];
+
+          loadedCourses.forEach((course: any) => {
+            nextCourseMap[course.courseCode] = (course.checklist || []).map((item: any, index: number) => ({
+              id: item.id || `task-${index}`,
+              text: item.text || String(item),
+              done: !!item.done,
+            }));
+          });
+
+          if (Object.keys(nextCourseMap).length > 0) {
+            setCourseChecklists(prev => ({ ...nextCourseMap, ...prev }));
+          }
+          setCourseSyncStatus('idle');
+        }
+      } catch (error) {
+        setCourseSyncStatus('error');
+      }
+    };
+
+    hydrateCourses();
+  }, [courseCards.length]);
+
   // Setup audio and service worker message listener for playing sound
   useEffect(() => {
     // create audio element once
@@ -239,11 +399,6 @@ export default function App() {
     }
 
     const onMessage = (ev: MessageEvent) => {
-
-  const currentSystemDayIndex = () => {
-    const day = new Date().getDay();
-    return day === 0 ? 6 : day - 1;
-  };
       try {
         const data = ev.data;
         if (data && data.type === 'play-sound' && audioRef.current) {
@@ -558,6 +713,77 @@ export default function App() {
 
   return (
     <div className="min-h-screen font-sans p-4 pb-24 md:p-8 selection:bg-rose-100 safe-top">
+      <AnimatePresence>
+        {drawerOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/60 z-[230]"
+            onClick={() => setDrawerOpen(false)}
+          >
+            <motion.aside
+              initial={{ x: -320 }}
+              animate={{ x: 0 }}
+              exit={{ x: -320 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm glass border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-black">Navegación</p>
+                  <h2 className="font-hand text-3xl font-black text-indigo-950">Mya Dynamics</h2>
+                </div>
+                <button onClick={() => setDrawerOpen(false)} className="w-10 h-10 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center">
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => { setDrawerView('horario'); setDrawerOpen(false); }}
+                  className={`w-full rounded-2xl border-2 p-4 text-left flex items-center gap-3 ${drawerView === 'horario' ? 'bg-indigo-900 text-white border-indigo-950' : 'bg-white text-indigo-950 border-indigo-200'}`}
+                >
+                  <Calendar className="w-5 h-5" />
+                  <span className="font-black">Horario</span>
+                </button>
+                <button
+                  onClick={() => { setDrawerView('mis-cursos'); setDrawerOpen(false); }}
+                  className={`w-full rounded-2xl border-2 p-4 text-left flex items-center gap-3 ${drawerView === 'mis-cursos' ? 'bg-fuchsia-700 text-white border-fuchsia-950' : 'bg-white text-indigo-950 border-indigo-200'}`}
+                >
+                  <GraduationCap className="w-5 h-5" />
+                  <span className="font-black">Mis Cursos</span>
+                </button>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <button
+                  onClick={handleEnableNotifications}
+                  className="w-full rounded-2xl border-2 border-amber-500 bg-amber-400 text-amber-950 p-4 flex items-center gap-3 font-black"
+                >
+                  <Bell className="w-5 h-5" />
+                  <span>Activar campana</span>
+                </button>
+                <button
+                  onClick={() => setShowNotificationHoursModal(true)}
+                  className="w-full rounded-2xl border-2 border-slate-300 bg-white text-slate-800 p-4 flex items-center gap-3 font-bold"
+                >
+                  <Settings className="w-5 h-5" />
+                  <span>Horas de aviso</span>
+                </button>
+              </div>
+
+              <div className="mt-6 rounded-3xl border-2 border-indigo-200 bg-white/80 p-4">
+                <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-black">Estado</p>
+                <p className="mt-2 text-sm font-bold text-indigo-950">{courseSyncStatus === 'syncing' ? 'Sincronizando cursos' : courseSyncStatus === 'error' ? 'Sincronización con errores' : 'Listo para trabajar'}</p>
+                <p className="mt-1 text-xs text-slate-500">Horario fijo, cursos y checklist quedan persistidos.</p>
+              </div>
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-xl mx-auto space-y-6 pt-[env(safe-area-inset-top)]">
         
         {/* Header */}
@@ -577,6 +803,14 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="p-3 sketch-border border-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition font-bold flex items-center gap-2"
+                aria-label="Abrir menú lateral"
+              >
+                <Menu className="w-5 h-5" />
+                <span className="hidden sm:inline text-xs uppercase tracking-widest">Menú</span>
+              </button>
               <button 
                 onClick={handleEnableNotifications}
                 className={`p-3 sketch-border border-2 rounded-lg transition flex items-center gap-2 font-bold ${notificationsEnabled ? 'bg-indigo-100 border-indigo-900 text-indigo-900' : 'bg-yellow-100 border-yellow-900 text-yellow-900'}`}
@@ -596,8 +830,9 @@ export default function App() {
           </div>
         </header>
 
-        {/* Dashboard / Quick Progress */}
-        <section className="paper-card sketch-border p-6 bg-white relative overflow-hidden">
+        {/* Main view switch */}
+        {drawerView === 'horario' ? (
+          <section className="paper-card sketch-border p-6 bg-white relative overflow-hidden">
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-50 rounded-full blur-3xl opacity-50" />
           <div className="flex items-center justify-between mb-4 relative z-10">
             <h3 className="font-hand text-xl font-bold text-indigo-900">Tu Ritmo</h3>
@@ -649,66 +884,123 @@ export default function App() {
           {pushError && (
             <p className="mt-2 text-[11px] text-rose-600 font-semibold relative z-10">{pushError}</p>
           )}
-        </section>
-
-        {/* Day Selector */}
-        <nav className="flex justify-between items-center gap-1 p-2 bg-slate-100/50 sketch-border border-2 border-slate-200">
-          {schedule.map((day, idx) => (
-            <button
-              key={day.day}
-              onClick={() => setActiveDayIndex(idx)}
-              className={`flex-1 py-3 rounded-xl transition-all font-hand font-bold text-xl relative ${
-                activeDayIndex === idx 
-                  ? 'text-indigo-900' 
-                  : 'text-slate-400 hover:text-indigo-900'
-              }`}
-            >
-              <span className="relative z-10">{day.day.substring(0, 1)}</span>
-              {activeDayIndex === idx && (
-                <motion.div 
-                  layoutId="activeDay"
-                  className="absolute inset-0 bg-white border-2 border-indigo-950 sketch-border shadow-sm"
-                />
-              )}
-            </button>
-          ))}
-        </nav>
-
-        {/* Schedule List Container */}
-        <div 
-          onClick={() => openEditor('add')}
-          className="space-y-4 min-h-[60vh] pb-24 cursor-pointer"
-        >
-          <div onClick={(e) => e.stopPropagation()}>
-            <AnimatePresence mode="popLayout" initial={false}>
-              {schedule[activeDayIndex].activities
-                .filter(activity => !completedToday[activity.id])
-                .map((activity) => (
-                  <DraggableActivity 
-                    key={activity.id} 
-                    activity={activity} 
-                    onEdit={() => openEditor('edit', activity)}
-                    onComplete={() => markAsCompleted(activity.id)}
-                    colorClass={getCategoryColor(activity.category)}
-                  />
-              ))}
-            </AnimatePresence>
-          </div>
-          
-          {schedule[activeDayIndex].activities.filter(a => !completedToday[a.id]).length === 0 && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-20"
-            >
-              <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8" />
+          </section>
+        ) : (
+          <section className="space-y-5">
+            <div className="paper-card sketch-border p-5 bg-white">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-hand text-2xl font-black text-indigo-950">Mis Cursos</h3>
+                  <p className="text-sm text-slate-500 font-semibold">Tarjetas persistentes con tareas sincronizadas.</p>
+                </div>
+                <span className="inline-flex items-center gap-2 rounded-full border-2 border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-black text-fuchsia-700">
+                  <CheckSquare className="w-4 h-4" />
+                  {courseCards.length} cursos
+                </span>
               </div>
-              <p className="font-bold text-slate-400">¡Día completado!</p>
-              <p className="text-xs text-slate-300">Has liquidado todos tus bloques de hoy.</p>
-            </motion.div>
-          )}
-        </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {courseCards.map(course => {
+                  const total = courseChecklists[course.courseCode]?.length || course.checklist.length || 0;
+                  const done = (courseChecklists[course.courseCode] || course.checklist).filter(task => task.done).length;
+                  const progress = total === 0 ? 0 : Math.round((done / total) * 100);
+
+                  return (
+                    <button
+                      key={course.courseCode}
+                      onClick={() => setSelectedCourseCode(course.courseCode)}
+                      className="text-left rounded-3xl border-2 border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] hover:border-indigo-300 transition"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 via-white to-fuchsia-100 border-2 border-indigo-200 flex items-center justify-center text-3xl shrink-0">
+                          {course.emoji}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 font-black">{course.courseCode}</p>
+                              <h4 className="font-hand text-2xl font-black text-indigo-950 truncate">{course.title}</h4>
+                            </div>
+                            <span className="rounded-full border-2 border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{progress}%</span>
+                          </div>
+
+                          <p className="mt-2 text-sm text-slate-500 font-semibold">{course.dayOfWeek} · {course.startTime} - {course.endTime}</p>
+                          <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+                            <div className="h-full bg-gradient-to-r from-fuchsia-500 to-indigo-600" style={{ width: `${progress}%` }} />
+                          </div>
+                          <p className="mt-2 text-xs text-slate-400 font-semibold">{done}/{total || 0} tareas completadas</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {drawerView === 'horario' && (
+          <>
+            {/* Day Selector */}
+            <nav className="flex justify-between items-center gap-1 p-2 bg-slate-100/50 sketch-border border-2 border-slate-200">
+              {schedule.map((day, idx) => (
+                <button
+                  key={day.day}
+                  onClick={() => setActiveDayIndex(idx)}
+                  className={`flex-1 py-3 rounded-xl transition-all font-hand font-bold text-xl relative ${
+                    activeDayIndex === idx 
+                      ? 'text-indigo-900' 
+                      : 'text-slate-400 hover:text-indigo-900'
+                  }`}
+                >
+                  <span className="relative z-10">{day.day.substring(0, 1)}</span>
+                  {activeDayIndex === idx && (
+                    <motion.div 
+                      layoutId="activeDay"
+                      className="absolute inset-0 bg-white border-2 border-indigo-950 sketch-border shadow-sm"
+                    />
+                  )}
+                </button>
+              ))}
+            </nav>
+
+            {/* Schedule List Container */}
+            <div 
+              onClick={() => openEditor('add')}
+              className="space-y-4 min-h-[60vh] pb-24 cursor-pointer"
+            >
+              <div onClick={(e) => e.stopPropagation()}>
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {schedule[activeDayIndex].activities
+                    .filter(activity => !completedToday[activity.id])
+                    .map((activity) => (
+                      <DraggableActivity 
+                        key={activity.id} 
+                        activity={activity} 
+                        onEdit={() => openEditor('edit', activity)}
+                        onComplete={() => markAsCompleted(activity.id)}
+                        colorClass={getCategoryColor(activity.category)}
+                      />
+                  ))}
+                </AnimatePresence>
+              </div>
+          
+              {schedule[activeDayIndex].activities.filter(a => !completedToday[a.id]).length === 0 && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-center py-20"
+                >
+                  <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-8 h-8" />
+                  </div>
+                  <p className="font-bold text-slate-400">¡Día completado!</p>
+                  <p className="text-xs text-slate-300">Has liquidado todos tus bloques de hoy.</p>
+                </motion.div>
+              )}
+            </div>
+          </>
+        )}
 
         {/* Global Floating Add Button */}
         <button 
@@ -717,6 +1009,104 @@ export default function App() {
         >
           <Plus className="w-8 h-8" />
         </button>
+
+        {/* Course detail modal */}
+        <AnimatePresence>
+          {selectedCourse && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/70 z-[240] flex items-end md:items-center justify-center p-0 md:p-6"
+              onClick={() => setSelectedCourseCode(null)}
+            >
+              <motion.div
+                initial={{ y: 80, opacity: 0, scale: 0.98 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 80, opacity: 0, scale: 0.98 }}
+                className="w-full md:max-w-2xl glass border-t-4 md:border-4 border-indigo-950 rounded-t-[2rem] md:rounded-[2rem] p-5 md:p-6 max-h-[88vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500 font-black">{selectedCourse.courseCode}</p>
+                    <h3 className="font-hand text-3xl font-black text-indigo-950">{selectedCourse.title}</h3>
+                    <p className="mt-1 text-sm text-slate-600 font-semibold">{selectedCourse.dayOfWeek} · {selectedCourse.startTime} - {selectedCourse.endTime}</p>
+                  </div>
+                  <button onClick={() => setSelectedCourseCode(null)} className="w-11 h-11 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center shrink-0">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  {selectedCourse.blocks.map((block, index) => (
+                    <div key={`${block.day}-${index}`} className="rounded-2xl border-2 border-indigo-200 bg-white p-3">
+                      <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 font-black">Bloque</p>
+                      <p className="mt-1 text-sm font-black text-indigo-950">{block.day}</p>
+                      <p className="text-sm text-slate-600 font-semibold">{block.startTime} - {block.endTime}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 rounded-3xl border-2 border-fuchsia-200 bg-white p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-hand text-2xl font-black text-fuchsia-800">Lista de Tareas</h4>
+                    <span className="text-xs font-black text-fuchsia-600 uppercase tracking-[0.3em]">{selectedCourseTasks.filter(task => task.done).length}/{selectedCourseTasks.length || 0}</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedCourseTasks.map(task => (
+                      <div key={task.id} className="flex items-center gap-3 rounded-2xl border-2 border-slate-200 bg-slate-50 p-3">
+                        <button
+                          onClick={() => toggleCourseTask(selectedCourse.courseCode, task.id)}
+                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${task.done ? 'bg-emerald-500 border-emerald-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}
+                        >
+                          <CheckSquare className="w-4 h-4" />
+                        </button>
+                        <span className={`flex-1 text-sm font-semibold ${task.done ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.text}</span>
+                        <button onClick={() => deleteCourseTask(selectedCourse.courseCode, task.id)} className="text-rose-600">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {selectedCourseTasks.length === 0 && (
+                      <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm font-semibold text-slate-500">
+                        Aún no hay tareas. Agrega la primera abajo.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex gap-3">
+                    <input
+                      value={newCourseTask}
+                      onChange={(e) => setNewCourseTask(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCourseTask(); } }}
+                      placeholder="Nueva tarea o pendiente..."
+                      className="flex-1 rounded-2xl border-2 border-indigo-200 bg-white px-4 py-3 font-semibold focus:outline-none"
+                    />
+                    <button onClick={addCourseTask} className="rounded-2xl bg-fuchsia-700 px-4 py-3 font-black text-white border-2 border-fuchsia-900 flex items-center gap-2">
+                      <CirclePlus className="w-4 h-4" />
+                      Añadir
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button onClick={() => setSelectedCourseCode(null)} className="flex-1 rounded-2xl border-2 border-slate-300 bg-white px-4 py-3 font-black text-slate-700">
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={() => { setDrawerView('horario'); setSelectedCourseCode(null); }}
+                    className="flex-1 rounded-2xl border-2 border-indigo-950 bg-indigo-900 px-4 py-3 font-black text-white"
+                  >
+                    Ver horario
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Activity Editor Modal */}
         <AnimatePresence>

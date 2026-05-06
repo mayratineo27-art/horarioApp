@@ -21,11 +21,23 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 }
 
 async function getApiBaseUrl() {
-  return import.meta.env.VITE_API_BASE_URL || '';
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env || {};
+  const configured = env.VITE_API_BASE_URL || '';
+  if (configured) return configured;
+
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:8787';
+    }
+  }
+
+  return 'https://horarioapp-ows5.onrender.com';
 }
 
 async function getApiToken() {
-  return import.meta.env.VITE_PUSH_API_TOKEN || '';
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env || {};
+  return env.VITE_PUSH_API_TOKEN || '';
 }
 
 async function buildHeaders(extraHeaders: Record<string, string> = {}) {
@@ -112,5 +124,44 @@ export async function sendTestPush() {
   });
   if (!res.ok) {
     throw new Error('No se pudo enviar la notificacion de prueba.');
+  }
+}
+
+export async function loadCoursesFromBackend() {
+  const baseUrl = await getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/courses`, {
+    headers: await buildHeaders(),
+  });
+
+  if (!res.ok) {
+    throw new Error('No se pudieron cargar los cursos.');
+  }
+
+  return res.json();
+}
+
+export async function syncCoursesToBackend(payload: { courses: unknown }) {
+  const baseUrl = await getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/courses/sync`, {
+    method: 'POST',
+    headers: await buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error('No se pudieron sincronizar los cursos.');
+  }
+}
+
+export async function saveCourseChecklistToBackend(courseCode: string, items: unknown, completed = false) {
+  const baseUrl = await getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/courses/${encodeURIComponent(courseCode)}/checklist`, {
+    method: 'PUT',
+    headers: await buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ items, completed }),
+  });
+
+  if (!res.ok) {
+    throw new Error('No se pudo guardar la lista del curso.');
   }
 }

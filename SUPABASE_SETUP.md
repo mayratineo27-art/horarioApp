@@ -26,30 +26,16 @@ Guía para conectar tu app a una base de datos PostgreSQL gratis en la nube.
 
 1. En el sidebar, click en **"SQL Editor"**
 2. Click en **"New query"**
-3. Pega este código:
+3. Abre el archivo [supabase/migrations/20260506_0001_mya_dynamics.sql](./supabase/migrations/20260506_0001_mya_dynamics.sql)
+4. Copia todo su contenido y pégalo en el editor SQL de Supabase
+5. Click en **"Run"** (esquina superior derecha)
+6. Verás un mensaje: "Success! 1 queries executed"
 
-```sql
--- Crear tabla user_configs
-CREATE TABLE user_configs (
-  id INTEGER PRIMARY KEY,
-  timezone TEXT NOT NULL DEFAULT 'America/Santo_Domingo',
-  schedule JSONB DEFAULT '[]',
-  subscription JSONB,
-  sent_by_date JSONB DEFAULT '{}',
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Crear índice para acceso rápido
-CREATE INDEX idx_user_configs_id ON user_configs(id);
-
--- Insertar configuración inicial
-INSERT INTO user_configs (id, timezone, schedule, subscription, sent_by_date)
-VALUES (1, 'America/Santo_Domingo', '[]', NULL, '{}');
-```
-
-4. Click en **"Run"** (esquina superior derecha)
-5. Verás un mensaje: "Success! 1 queries executed"
+Ese archivo crea o actualiza:
+- `user_configs` con `notification_hour_start` y `notification_hour_end`
+- `fixed_courses`
+- `course_checklists`
+- las policies necesarias para lectura/escritura
 
 ## Paso 3: Obtener Claves API
 

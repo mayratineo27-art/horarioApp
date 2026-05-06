@@ -23,10 +23,15 @@ self.addEventListener('push', (event) => {
       icon: payload.icon,
       badge: payload.badge,
       data: payload.data,
-      vibrate: [120, 50, 120],
+      vibrate: [200, 80, 200, 80, 200],
       tag: 'mya-dynamics-reminder',
       renotify: true,
       silent: false,
+      requireInteraction: true,
+      actions: [
+        { action: 'open', title: 'Abrir' },
+        { action: 'dismiss', title: 'Cerrar' },
+      ],
     }).then(() => {
       // Notify any open clients to play a sound (service workers cannot play audio directly)
       return self.clients.matchAll({ includeUncontrolled: true }).then(clients => {
@@ -48,6 +53,10 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = event.notification?.data?.url || '/';
+
+  if (event.action === 'dismiss') {
+    return;
+  }
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {

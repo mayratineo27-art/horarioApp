@@ -1,9 +1,45 @@
 create extension if not exists "pgcrypto";
 
+create table if not exists public.user_configs (
+  id integer primary key,
+  timezone text not null default 'America/Santo_Domingo',
+  schedule jsonb not null default '[]'::jsonb,
+  subscription jsonb,
+  sent_by_date jsonb not null default '{}'::jsonb,
+  notification_hour_start integer not null default 7,
+  notification_hour_end integer not null default 22,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_configs
+  add column if not exists notification_hour_start integer not null default 7,
+  add column if not exists notification_hour_end integer not null default 22,
+  add column if not exists sent_by_date jsonb not null default '{}'::jsonb,
+  add column if not exists timezone text not null default 'America/Santo_Domingo',
+  add column if not exists schedule jsonb not null default '[]'::jsonb,
+  add column if not exists subscription jsonb,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
+update public.user_configs
+set
+  timezone = coalesce(timezone, 'America/Santo_Domingo'),
+  schedule = coalesce(schedule, '[]'::jsonb),
+  sent_by_date = coalesce(sent_by_date, '{}'::jsonb),
+  notification_hour_start = coalesce(notification_hour_start, 7),
+  notification_hour_end = coalesce(notification_hour_end, 22),
+  updated_at = now()
+where id = 1;
+
+insert into public.user_configs (id, timezone, schedule, subscription, sent_by_date, notification_hour_start, notification_hour_end)
+values (1, 'America/Santo_Domingo', '[]'::jsonb, null, '{}'::jsonb, 7, 22)
+on conflict (id) do nothing;
+
 create table if not exists public.fixed_courses (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
-  course_code text,
+  course_code text not null,
   name text not null,
   category text not null,
   day_of_week text not null,
@@ -19,6 +55,7 @@ create table if not exists public.fixed_courses (
 
 create index if not exists fixed_courses_user_key_idx on public.fixed_courses (user_key);
 create index if not exists fixed_courses_day_idx on public.fixed_courses (user_key, day_of_week);
+create index if not exists fixed_courses_code_idx on public.fixed_courses (user_key, course_code);
 
 create table if not exists public.course_checklists (
   id uuid primary key default gen_random_uuid(),

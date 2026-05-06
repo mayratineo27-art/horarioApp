@@ -3,7 +3,17 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cron from 'node-cron';
 import webpush from 'web-push';
-import { loadConfig, saveConfig, initializeDatabase, type DaySchedule } from './supabase.js';
+import {
+  loadConfig,
+  saveConfig,
+  initializeDatabase,
+  loadCourses,
+  saveCourses,
+  saveCourseChecklist,
+  type DaySchedule,
+  type CourseRecord,
+  type CourseTaskItem,
+} from './supabase.js';
 
 dotenv.config({ override: true });
 
@@ -11,6 +21,14 @@ const app = express();
 const PORT = Number(process.env.PORT || 8787);
 const PUSH_API_TOKEN = process.env.PUSH_API_TOKEN || '';
 const WINDOWS = [90, 30, 10] as const;
+
+type PushSubscriptionPayload = {
+  endpoint: string;
+  keys?: {
+    p256dh?: string;
+    auth?: string;
+  };
+};
 
 function normalizeDay(day: string): string {
   return day
@@ -37,7 +55,7 @@ function toTotalMinutes(hhmm: string): number {
   return h * 60 + m;
 }
 
-async function sendPush(subscription: webpush.PushSubscription, title: string, body: string) {
+async function sendPush(subscription: PushSubscriptionPayload, title: string, body: string) {
   await webpush.sendNotification(
     subscription,
     JSON.stringify({
@@ -102,7 +120,7 @@ app.post('/api/push/subscribe', async (req, res) => {
   }
 
   const { subscription, timezone, schedule } = req.body as {
-    subscription?: webpush.PushSubscription;
+    subscription?: PushSubscriptionPayload;
     timezone?: string;
     schedule?: DaySchedule[];
   };
@@ -163,12 +181,13 @@ app.post('/api/push/test', async (_req, res) => {
 
   try {
     const config = await loadConfig();
-    if (!config.subscription) {
+    const subscription = config.subscription as PushSubscriptionPayload | null;
+    if (!subscription?.endpoint) {
       res.status(400).json({ ok: false, error: 'No subscription saved yet' });
       return;
     }
 
-    await sendPush(config.subscription, 'Mya Dynamics', 'Notificacion de prueba enviada desde backend.');
+    await sendPush(subscription, 'Mya Dynamics', 'Notificacion de prueba enviada desde backend.');
     res.json({ ok: true });
   } catch (error) {
     console.error('Error sending test push:', error);
@@ -226,10 +245,61 @@ app.get('/api/push/config', async (req, res) => {
   }
 });
 
+app.get('/api/courses', async (req, res) => {
+  if (!requirePushToken(req, res)) return;
+
+  try {
+    const courses = await loadCourses();
+    res.json({ ok: true, courses });
+  } catch (error) {
+    console.error('Error loading courses:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load courses' });
+  }
+});
+
+app.post('/api/courses/sync', async (req, res) => {
+  if (!requirePushToken(req, res)) return;
+
+  const { courses } = req.body as { courses?: CourseRecord[] };
+  if (!Array.isArray(courses)) {
+    res.status(400).json({ ok: false, error: 'courses is required' });
+    return;
+  }
+
+  try {
+    await saveCourses(courses);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error syncing courses:', error);
+    res.status(500).json({ ok: false, error: 'Failed to sync courses' });
+  }
+});
+
+app.put('/api/courses/:courseCode/checklist', async (req, res) => {
+  if (!requirePushToken(req, res)) return;
+
+  const { courseCode } = req.params;
+  const { items, completed } = req.body as { items?: CourseTaskItem[]; completed?: boolean };
+
+  if (!Array.isArray(items)) {
+    res.status(400).json({ ok: false, error: 'items is required' });
+    return;
+  }
+
+  try {
+    await saveCourseChecklist(courseCode, items, !!completed);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error saving checklist:', error);
+    res.status(500).json({ ok: false, error: 'Failed to save checklist' });
+  }
+});
+
 cron.schedule('* * * * *', async () => {
   try {
     const config = await loadConfig();
-    if (!config.subscription || !config.schedule.length || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    const subscription = config.subscription as PushSubscriptionPayload | null;
+    if (!subscription?.endpoint || !config.schedule.length || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
       return;
     }
 
@@ -263,7 +333,7 @@ cron.schedule('* * * * *', async () => {
 
         try {
           const body = `Faltan ${win} minutos para: ${activity.name}`;
-          await sendPush(config.subscription, `Aviso ${win} min`, body);
+          await sendPush(subscription, `Aviso ${win} min`, body);
           sentMap[key] = true;
           changed = true;
         } catch (error: any) {
