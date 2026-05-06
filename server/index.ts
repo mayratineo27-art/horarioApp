@@ -80,6 +80,10 @@ function requirePushToken(req: express.Request, res: express.Response): boolean 
   return true;
 }
 
+app.get('/', (_req, res) => {
+  res.json({ ok: true, service: 'Mya Dynamics Backend', version: '1.0.0', endpoints: ['/api/health', '/api/push/public-key', '/api/push/subscribe', '/api/push/schedule', '/api/push/test'] });
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, message: 'Backend online' });
 });
