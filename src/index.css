@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&family=Gaegu:wght@400;700&family=Inter:wght@400;700;900&family=Satoshi:wght@400;700;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-hand: "Gaegu", cursive;
+  --font-display: "Satoshi", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-[#FBF9F4] text-slate-800 antialiased overflow-x-hidden transition-colors duration-500;
+    -webkit-tap-highlight-color: transparent;
+    background-image: 
+      radial-gradient(#e5e7eb 0.5px, transparent 0.5px),
+      radial-gradient(#e5e7eb 0.5px, #FBF9F4 0.5px);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+}
+
+.paper-card {
+  background: #fff;
+  border: 2px solid #1a1a1a;
+  box-shadow: 4px 4px 0px #1a1a1a;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.paper-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0px #1a1a1a;
+}
+
+.paper-card:active {
+  box-shadow: 2px 2px 0px #1a1a1a;
+  transform: translate(2px, 2px);
+}
+
+.sketch-border {
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+}
+
+.highlighter-yellow {
+  background: linear-gradient(100deg, rgba(254, 240, 138, 0.7) 0%, rgba(254, 240, 138, 0.4) 100%);
+  padding: 0 4px;
+}
+
+.highlighter-rose {
+  background: linear-gradient(100deg, rgba(253, 224, 224, 0.7) 0%, rgba(253, 224, 224, 0.4) 100%);
+  padding: 0 4px;
+}
+
+.hand-ink {
+  text-shadow: 0.5px 0.5px 0px rgba(0,0,0,0.1);
+}

@@ -1,0 +1,22 @@
+# Dependencias y build
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Secretos y configuración local (¡IMPORTANTE: nunca subir a GitHub!)
+.env
+.env.local
+.env.*.local
+
+# Mantener el archivo de ejemplo
+!.env.example
+
+# Sistema operativo
+.DS_Store
+.vscode/
+.idea/
+
+# Data local del backend (si existe)
+server/data/
