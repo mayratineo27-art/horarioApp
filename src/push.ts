@@ -78,6 +78,19 @@ export async function syncSubscriptionToBackend(payload: {
   }
 }
 
+export async function syncNotificationHours(notificationHourStart: number, notificationHourEnd: number) {
+  const baseUrl = await getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/push/notification-hours`, {
+    method: 'POST',
+    headers: await buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ notificationHourStart, notificationHourEnd }),
+  });
+
+  if (!res.ok) {
+    throw new Error('No se pudieron guardar las horas de notificacion en backend.');
+  }
+}
+
 export async function syncScheduleToBackend(payload: { timezone: string; schedule: unknown }) {
   const baseUrl = await getApiBaseUrl();
   await fetch(`${baseUrl}/api/push/schedule`, {

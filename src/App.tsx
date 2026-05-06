@@ -22,7 +22,8 @@ import {
   BellOff,
   Plus,
   Trash2,
-  Star
+  Star,
+  Settings
 } from 'lucide-react';
 import { 
   INITIAL_SCHEDULE, 
@@ -37,6 +38,7 @@ import {
   syncScheduleToBackend,
   syncSubscriptionToBackend,
   sendTestPush,
+  syncNotificationHours,
 } from './push';
 
 export default function App() {
@@ -96,6 +98,9 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [pushConfigured, setPushConfigured] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [notificationHourStart, setNotificationHourStart] = useState(7);
+  const [notificationHourEnd, setNotificationHourEnd] = useState(22);
+  const [showNotificationHoursModal, setShowNotificationHoursModal] = useState(false);
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string} | null>(null);
@@ -130,6 +135,12 @@ export default function App() {
       // Keep app usable even if backend is temporarily unavailable.
     });
   }, [schedule]);
+
+  useEffect(() => {
+    syncNotificationHours(notificationHourStart, notificationHourEnd).catch(() => {
+      // Keep app usable even if backend is temporarily unavailable.
+    });
+  }, [notificationHourStart, notificationHourEnd]);
 
   // --- NOTIFICATION LOGIC (90, 30, 10 min) ---
   useEffect(() => {
@@ -398,6 +409,13 @@ export default function App() {
           >
             {notificationsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
           </button>
+          <button
+            onClick={() => setShowNotificationHoursModal(true)}
+            className="p-3 sketch-border border-2 bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100"
+            title="Configurar horas de notificaciones"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
         </header>
 
         {/* Dashboard / Quick Progress */}
@@ -626,6 +644,78 @@ export default function App() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Notification Hours Modal */}
+        <AnimatePresence>
+          {showNotificationHoursModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowNotificationHoursModal(false)}
+              className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white border-4 border-indigo-900 rounded-2xl p-6 max-w-sm w-full sketch-border"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="font-hand text-2xl font-bold text-indigo-900">Horario de Notificaciones</h2>
+                  <button
+                    onClick={() => setShowNotificationHoursModal(false)}
+                    className="p-2 hover:bg-slate-100 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">
+                      Hora de Inicio (0-23)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={notificationHourStart}
+                      onChange={(e) => setNotificationHourStart(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                      className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg font-mono font-bold focus:outline-none focus:border-indigo-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">
+                      Hora de Fin (0-23)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={notificationHourEnd}
+                      onChange={(e) => setNotificationHourEnd(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                      className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg font-mono font-bold focus:outline-none focus:border-indigo-900"
+                    />
+                  </div>
+
+                  <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-3 text-sm text-indigo-900">
+                    <p>🔔 Recibirás notificaciones entre las <strong>{notificationHourStart}:00</strong> y <strong>{notificationHourEnd}:00</strong></p>
+                  </div>
+
+                  <button
+                    onClick={() => setShowNotificationHoursModal(false)}
+                    className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-2 px-4 rounded-lg sketch-border border-2 border-indigo-900 transition"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

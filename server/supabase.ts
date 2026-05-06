@@ -74,6 +74,8 @@ export interface UserConfig {
   schedule: DaySchedule[];
   subscription: unknown | null;
   sentByDate: Record<string, Record<string, boolean>>;
+  notificationHourStart: number;
+  notificationHourEnd: number;
 }
 
 const TABLE_NAME = 'user_configs';
@@ -148,5 +150,7 @@ function getDefaultConfig(): UserConfig {
     schedule: [],
     subscription: null,
     sentByDate: {},
+    notificationHourStart: 7,
+    notificationHourEnd: 22,
   };
 }

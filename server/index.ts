@@ -176,6 +176,38 @@ app.post('/api/push/test', async (_req, res) => {
   }
 });
 
+app.post('/api/push/notification-hours', async (req, res) => {
+  if (!requirePushToken(req, res)) {
+    return;
+  }
+
+  const { notificationHourStart, notificationHourEnd } = req.body as {
+    notificationHourStart?: number;
+    notificationHourEnd?: number;
+  };
+
+  if (notificationHourStart === undefined || notificationHourEnd === undefined) {
+    res.status(400).json({ ok: false, error: 'notificationHourStart and notificationHourEnd are required' });
+    return;
+  }
+
+  if (notificationHourStart < 0 || notificationHourStart > 23 || notificationHourEnd < 0 || notificationHourEnd > 23) {
+    res.status(400).json({ ok: false, error: 'Hours must be between 0 and 23' });
+    return;
+  }
+
+  try {
+    const config = await loadConfig();
+    config.notificationHourStart = notificationHourStart;
+    config.notificationHourEnd = notificationHourEnd;
+    await saveConfig(config);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error saving notification hours:', error);
+    res.status(500).json({ ok: false, error: 'Failed to save notification hours' });
+  }
+});
+
 cron.schedule('* * * * *', async () => {
   try {
     const config = await loadConfig();
@@ -184,6 +216,14 @@ cron.schedule('* * * * *', async () => {
     }
 
     const { day, hh, mm, dateKey } = getLocalParts(config.timezone || 'America/Santo_Domingo');
+    
+    // Check if current hour is within notification window
+    const notificationStart = config.notificationHourStart ?? 7;
+    const notificationEnd = config.notificationHourEnd ?? 22;
+    if (hh < notificationStart || hh >= notificationEnd) {
+      return;
+    }
+    
     const today = config.schedule.find((d) => normalizeDay(d.day) === normalizeDay(day));
     if (!today) {
       return;
