@@ -103,7 +103,7 @@ export default function App() {
   const [showNotificationHoursModal, setShowNotificationHoursModal] = useState(false);
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
-  const [notification, setNotification] = useState<{title: string, message: string, activityId?: string} | null>(null);
+  const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // --- PERSISTENCE ---
@@ -229,7 +229,7 @@ export default function App() {
   // --- HANDLERS ---
   const markAsCompleted = (activityId: string) => {
     setCompletedToday(prev => ({ ...prev, [activityId]: true }));
-    setNotification({ title: '¡Hecho!', message: 'Actividad completada y archivada por hoy.' });
+    setNotification({ title: '✅ ¡Completada!', message: 'Actividad archivada por hoy.', type: 'success' });
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -245,7 +245,7 @@ export default function App() {
       if (permission !== 'granted') {
         setNotificationsEnabled(false);
         setPushConfigured(false);
-        setNotification({ title: 'Permiso requerido', message: 'Debes aceptar notificaciones para activar avisos en segundo plano.' });
+        setNotification({ title: '⚠️ Permiso requerido', message: 'Debes aceptar notificaciones para activar avisos en segundo plano.', type: 'error' });
         setTimeout(() => setNotification(null), 4000);
         return;
       }
@@ -264,14 +264,14 @@ export default function App() {
 
       setNotificationsEnabled(true);
       setPushConfigured(true);
-      setNotification({ title: 'Push activado', message: 'Ahora recibiras notificaciones aunque cierres la app.' });
+      setNotification({ title: '🔔 Push Activado', message: 'Notificaciones activas incluso con la app cerrada.', type: 'success' });
       setTimeout(() => setNotification(null), 3500);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'No se pudo activar push.';
       setPushError(msg);
       setNotificationsEnabled(false);
       setPushConfigured(false);
-      setNotification({ title: 'Error de push', message: msg });
+      setNotification({ title: '❌ Error de Push', message: msg, type: 'error' });
       setTimeout(() => setNotification(null), 4500);
     }
   };
@@ -279,10 +279,10 @@ export default function App() {
   const handleSendTestPush = async () => {
     try {
       await sendTestPush();
-      setNotification({ title: 'Prueba enviada', message: 'Revisa la notificacion del sistema en tu telefono.' });
+      setNotification({ title: '📨 Prueba Enviada', message: 'Revisa la notificación en tu teléfono.', type: 'info' });
       setTimeout(() => setNotification(null), 3000);
     } catch {
-      setNotification({ title: 'Backend no disponible', message: 'No se pudo enviar la prueba de notificacion.' });
+      setNotification({ title: '⚠️ Backend Offline', message: 'No se pudo enviar la prueba de notificación.', type: 'error' });
       setTimeout(() => setNotification(null), 3500);
     }
   };
@@ -319,8 +319,9 @@ export default function App() {
     });
 
     setNotification({ 
-      title: showEditor?.mode === 'edit' ? 'Actualizado' : 'Añadida', 
-      message: `${name} guardado.` 
+      title: showEditor?.mode === 'edit' ? '✅ Actualizado' : '✅ Añadida', 
+      message: `${name} guardado.`,
+      type: 'success'
     });
     setShowEditor(null);
     setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
@@ -389,33 +390,38 @@ export default function App() {
       <div className="max-w-xl mx-auto space-y-6 pt-[env(safe-area-inset-top)]">
         
         {/* Header */}
-        <header className="flex items-center justify-between paper-card sketch-border p-5 pt-8 bg-white relative">
+        <header className="flex flex-col gap-3 paper-card sketch-border p-5 pt-8 bg-white relative">
           <div className="absolute top-2 left-1/2 -translate-x-1/2 w-24 h-6 bg-rose-200/50 -rotate-2 sketch-border" />
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 paper-card sketch-border bg-indigo-100 flex items-center justify-center text-indigo-600 rotate-3">
-              <Star className="w-6 h-6 fill-indigo-600" />
-            </div>
-            <div>
-              <h1 className="font-hand font-bold text-3xl tracking-tight text-indigo-900 leading-none">Mya Dynamics</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 highlighter-yellow">{schedule[activeDayIndex].day}</span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-rose-500 font-mono">{timeStr}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 paper-card sketch-border bg-indigo-100 flex items-center justify-center text-indigo-600 rotate-3">
+                <Star className="w-6 h-6 fill-indigo-600" />
+              </div>
+              <div>
+                <h1 className="font-hand font-bold text-3xl tracking-tight text-indigo-900 leading-none">Mya Dynamics</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 highlighter-yellow">{schedule[activeDayIndex].day}</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-rose-500 font-mono">{timeStr}</span>
+                </div>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleEnableNotifications}
+                className={`p-3 sketch-border border-2 rounded-lg transition ${notificationsEnabled ? 'bg-indigo-100 border-indigo-900 text-indigo-900' : 'bg-slate-50 border-slate-300 text-slate-400'}`}
+              >
+                {notificationsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+              </button>
+              <button
+                onClick={() => setShowNotificationHoursModal(true)}
+                className="p-3 sketch-border border-2 rounded-lg bg-yellow-100 border-yellow-900 text-yellow-900 hover:bg-yellow-200 transition font-bold flex items-center gap-2"
+                title="Configurar horas de notificaciones"
+              >
+                <Settings className="w-5 h-5" />
+                <span className="text-xs hidden sm:inline">Config</span>
+              </button>
+            </div>
           </div>
-          <button 
-            onClick={handleEnableNotifications}
-            className={`p-3 sketch-border border-2 ${notificationsEnabled ? 'bg-indigo-100 border-indigo-900 text-indigo-900' : 'bg-slate-50 border-slate-300 text-slate-400'}`}
-          >
-            {notificationsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
-          </button>
-          <button
-            onClick={() => setShowNotificationHoursModal(true)}
-            className="p-3 sketch-border border-2 bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100"
-            title="Configurar horas de notificaciones"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
         </header>
 
         {/* Dashboard / Quick Progress */}
@@ -629,20 +635,31 @@ export default function App() {
               initial={{ y: 50, opacity: 0, scale: 0.9 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 50, opacity: 0, scale: 0.9 }}
-              className="fixed bottom-8 left-6 right-6 paper-card bg-indigo-900 text-white p-4 sketch-border z-[150] flex items-center gap-4"
+              className={`fixed bottom-8 left-6 right-6 paper-card text-white p-5 sketch-border z-[150] flex items-center gap-4 shadow-2xl ${
+                notification.type === 'error' ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                notification.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
+                notification.type === 'info' ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
+                'bg-gradient-to-r from-rose-500 to-rose-600'
+              }`}
             >
-              <div className="w-10 h-10 border-2 border-white rounded-full flex items-center justify-center shrink-0">
-                <Bell className="w-5 h-5" />
+              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0 animate-pulse">
+                {notification.type === 'error' ? (
+                  <X className="w-6 h-6 text-red-600 font-bold" />
+                ) : notification.type === 'success' ? (
+                  <CheckCircle2 className="w-6 h-6 text-green-600 font-bold" />
+                ) : (
+                  <Bell className="w-6 h-6 text-rose-600 font-bold" />
+                )}
               </div>
               <div className="flex-1">
-                <p className="font-hand text-xl font-bold leading-tight">{notification.title}</p>
-                <p className="text-xs text-indigo-100">{notification.message}</p>
+                <p className="font-hand text-lg font-bold leading-tight text-white drop-shadow-lg">{notification.title}</p>
+                <p className="text-sm text-white/90 font-semibold drop-shadow-md">{notification.message}</p>
               </div>
               <button 
                 onClick={() => setNotification(null)} 
-                className="text-white/50 hover:text-white"
+                className="text-white hover:text-white/70 transition"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5 font-bold" />
               </button>
             </motion.div>
           )}
