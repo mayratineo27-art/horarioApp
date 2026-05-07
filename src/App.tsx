@@ -1496,7 +1496,7 @@ const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit,
         onDragEnd={handleDragEnd}
         onClick={onEdit}
         style={{ x: canSwipe ? x : 0, scale }}
-        className={`relative paper-card sketch-border p-5 bg-white ${canSwipe ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} transition-all ${
+        className={`relative paper-card sketch-border p-5 ${canSwipe ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} transition-all ${
           barColor
         }`}
       >

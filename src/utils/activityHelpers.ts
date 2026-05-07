@@ -74,16 +74,16 @@ export const getActivityBarColor = (activity: Activity): string => {
 
   // Fixed academic activities (courses, labs)
   if (isFixed && isAcademic) {
-    return 'border-l-4 border-l-rose-800 bg-gradient-to-r from-rose-50 via-rose-25 to-white';
+    return 'bg-rose-50 border-l-4 border-rose-800 text-rose-900';
   }
 
   // Fixed routine activities (meals, exercise, yoga)
   if (isFixed) {
-    return 'border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50 to-transparent';
+    return 'bg-emerald-50 border-l-4 border-emerald-500 text-emerald-900';
   }
 
   // Non-fixed tasks and personal projects (require manual action)
-  return 'border-l-4 border-l-amber-500 bg-gradient-to-r from-amber-50 to-transparent';
+  return 'bg-white border-l-4 border-amber-500 text-amber-900';
 };
 
 /**
