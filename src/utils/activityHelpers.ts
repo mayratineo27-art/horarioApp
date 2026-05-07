@@ -75,16 +75,16 @@ export const getActivityBarColor = (activity: Activity): string => {
 
   // Course activities (marked or auto-detected) - Steel Blue
   if (isCourse) {
-    return 'bg-gradient-to-br from-slate-100 via-slate-200 to-slate-100 border-l-4 border-slate-700 text-slate-900';
+    return 'actividad-curso';
   }
 
   // Fixed routine activities (meals, exercise, yoga) - Soft Green
   if (isFixed) {
-    return 'bg-emerald-50 border-l-4 border-emerald-500 text-emerald-900';
+    return 'actividad-rutina';
   }
 
   // Non-fixed tasks and personal projects (require manual action) - Bright Orange
-  return 'bg-orange-50 border-l-4 border-orange-500 text-orange-900';
+  return 'actividad-tarea';
 };
 
 /**

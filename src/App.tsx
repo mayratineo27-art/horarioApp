@@ -1168,7 +1168,8 @@ export default function App() {
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className="paper-card sketch-border w-full max-w-sm p-8 bg-white space-y-6"
+                  id="modal-editar-actividad"
+                  className="paper-card sketch-border w-full max-w-sm p-8 space-y-6"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-between items-center">
@@ -1253,7 +1254,7 @@ export default function App() {
                 <button 
                   onClick={handleSaveActivity}
                   disabled={!editorData.name.trim()}
-                  className="w-full py-4 bg-indigo-800 border-2 border-indigo-950 text-white font-hand text-xl rounded-xl shadow-[4px_4px_0px_#1a1a1a] active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none"
+                  className="w-full py-4 bg-indigo-950 border-2 border-indigo-950 text-white font-hand text-xl rounded-xl shadow-[0_12px_24px_rgba(17,24,39,0.28)] active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none"
                 >
                   {showEditor.mode === 'edit' ? 'Guardar Cambios' : 'Agendar'}
                 </button>
