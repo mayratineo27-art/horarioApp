@@ -781,7 +781,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm glass border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)]"
+              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm bg-white border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)]"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-5">
@@ -1086,7 +1086,7 @@ export default function App() {
                 initial={{ y: 80, opacity: 0, scale: 0.98 }}
                 animate={{ y: 0, opacity: 1, scale: 1 }}
                 exit={{ y: 80, opacity: 0, scale: 0.98 }}
-                className="w-full md:max-w-2xl glass border-t-4 md:border-4 border-indigo-950 rounded-t-[2rem] md:rounded-[2rem] p-5 md:p-6 max-h-[88vh] overflow-y-auto"
+                className="w-full md:max-w-2xl bg-white border-t-4 md:border-4 border-indigo-950 rounded-t-[2rem] md:rounded-[2rem] p-5 md:p-6 max-h-[88vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -1185,7 +1185,7 @@ export default function App() {
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
                   id="modal-editar-actividad"
-                  className="paper-card sketch-border w-full max-w-sm p-8 space-y-6"
+                  className="bg-white border-2 border-indigo-950 rounded-2xl w-full max-w-sm p-8 space-y-6 shadow-lg"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-between items-center">
@@ -1449,12 +1449,22 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-col">
                   <button
                     onClick={() => setConflictModal(null)}
-                    className="flex-1 py-3 rounded-xl border-2 border-slate-300 font-bold text-slate-700 bg-white"
+                    className="py-3 rounded-xl border-2 border-slate-300 font-bold text-slate-700 bg-white"
                   >
                     Cerrar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConflictModal(null);
+                      handleSaveActivity();
+                      setNotification({ title: '✅ Guardado', message: 'La actividad se guardó aunque hay conflicto de horario.', type: 'success' });
+                    }}
+                    className="py-3 rounded-xl border-2 border-green-600 bg-green-600 font-bold text-white"
+                  >
+                    Guardar de todas formas
                   </button>
                   <button
                     onClick={() => {
@@ -1462,7 +1472,7 @@ export default function App() {
                       setConflictModal(null);
                       setNotification({ title: 'Ajustado', message: `Se movió al bloque ${conflictModal.suggestionStart} - ${conflictModal.suggestionEnd}.`, type: 'info' });
                     }}
-                    className="flex-1 py-3 rounded-xl border-2 border-indigo-900 bg-indigo-900 font-bold text-white"
+                    className="py-3 rounded-xl border-2 border-indigo-900 bg-indigo-900 font-bold text-white"
                   >
                     Ajustar
                   </button>
