@@ -75,7 +75,7 @@ export const getActivityBarColor = (activity: Activity): string => {
 
   // Course activities (marked or auto-detected) - Steel Blue
   if (isCourse) {
-    return 'bg-slate-100 border-l-4 border-slate-700 text-slate-900';
+    return 'bg-gradient-to-br from-slate-100 via-slate-200 to-slate-100 border-l-4 border-slate-700 text-slate-900';
   }
 
   // Fixed routine activities (meals, exercise, yoga) - Soft Green

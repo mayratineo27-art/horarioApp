@@ -1253,7 +1253,7 @@ export default function App() {
                 <button 
                   onClick={handleSaveActivity}
                   disabled={!editorData.name.trim()}
-                  className="w-full py-4 bg-indigo-900 text-white font-hand text-xl rounded-xl shadow-[4px_4px_0px_#1a1a1a] active:scale-95 transition-all disabled:opacity-50"
+                  className="w-full py-4 bg-indigo-800 border-2 border-indigo-950 text-white font-hand text-xl rounded-xl shadow-[4px_4px_0px_#1a1a1a] active:scale-95 transition-all disabled:opacity-50 disabled:shadow-none"
                 >
                   {showEditor.mode === 'edit' ? 'Guardar Cambios' : 'Agendar'}
                 </button>
