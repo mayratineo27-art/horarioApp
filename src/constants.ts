@@ -18,6 +18,7 @@ export interface Activity {
   esFijo?: boolean;
   isAcademic?: boolean;
   isCourseMarked?: boolean;
+  customColor?: string;
   description?: string;
   emoji?: string;
   courseId?: string;

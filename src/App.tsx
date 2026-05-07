@@ -149,7 +149,7 @@ export default function App() {
   const [newCourseTask, setNewCourseTask] = useState('');
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
-  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false });
+  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -159,6 +159,21 @@ export default function App() {
   const parseMinutes = (value: string) => {
     const [hours, minutes] = value.split(':').map(Number);
     return hours * 60 + minutes;
+  };
+
+  const getContrastColor = (color: string) => {
+    try {
+      // support #rgb and #rrggbb
+      const hex = color.replace('#', '').trim();
+      const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+      const r = parseInt(full.slice(0, 2), 16);
+      const g = parseInt(full.slice(2, 4), 16);
+      const b = parseInt(full.slice(4, 6), 16);
+      const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      return luminance > 0.6 ? '#000000' : '#ffffff';
+    } catch (e) {
+      return '#000000';
+    }
   };
 
   const formatMinutes = (totalMinutes: number) => {
@@ -615,7 +630,7 @@ export default function App() {
   };
 
   const handleSaveActivity = () => {
-    const { name, start, end, emoji, isCourseMarked } = editorData;
+    const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
     if (!name.trim()) return;
 
     const checklist = checklistText
@@ -656,7 +671,7 @@ export default function App() {
       if (showEditor?.mode === 'edit' && showEditor.activityId) {
         activities = activities.map(a => 
           a.id === showEditor.activityId 
-            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id, isCourseMarked } 
+            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id, isCourseMarked, customColor: customColor || a.customColor } 
             : a
         );
       } else {
@@ -669,7 +684,8 @@ export default function App() {
           emoji,
           courseId: `manual-${Date.now()}`,
           checklist,
-          isCourseMarked,
+              isCourseMarked,
+              customColor: customColor || undefined,
         };
         activities.push(newAct);
       }
@@ -685,7 +701,7 @@ export default function App() {
       type: 'success'
     });
     setShowEditor(null);
-    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false });
+    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -696,12 +712,13 @@ export default function App() {
         start: activity.startTime,
         end: activity.endTime,
         emoji: activity.emoji || '📍',
-        isCourseMarked: activity.isCourseMarked || false
+        isCourseMarked: activity.isCourseMarked || false,
+        customColor: activity.customColor || ''
       });
       setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
-      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false });
+      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
       setChecklistText('');
       setShowEditor({ mode: 'add' });
     }
@@ -1249,6 +1266,38 @@ export default function App() {
                       🎓 Marcar como curso
                     </label>
                   </div>
+                  <div className="mt-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Color personalizado</label>
+                    <div className="mt-2 flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={editorData.customColor || '#ffffff'}
+                        onChange={(e) => setEditorData(prev => ({ ...prev, customColor: e.target.value }))}
+                        className="w-12 h-12 p-0 border-2 rounded-lg"
+                        aria-label="Seleccionar color"
+                      />
+                      <input
+                        type="text"
+                        value={editorData.customColor}
+                        onChange={(e) => setEditorData(prev => ({ ...prev, customColor: e.target.value }))}
+                        placeholder="#RRGGBB"
+                        className="w-full bg-slate-50 border-2 border-indigo-900 p-3 rounded-xl focus:outline-none font-mono text-sm"
+                      />
+                      <div className="w-10 h-10 rounded-lg border-2" style={{ background: editorData.customColor || 'transparent' }} />
+                    </div>
+
+                    <div className="mt-2 flex gap-2">
+                      {['#7c3aed','#b91c1c','#0ea5a4','#0f766e','#7f1d1d','#e11d48','#0ea5a4','#0ea5f5'].map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setEditorData(prev => ({ ...prev, customColor: c }))}
+                          className="w-8 h-8 rounded-lg border-2"
+                          style={{ background: c }}
+                          aria-label={`usar color ${c}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <button 
@@ -1476,6 +1525,8 @@ const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit,
   const isDimmed = shouldDimActivity(activity, currentTime, false);
   const isFixed = activity.isFixed || activity.esFijo;
   const barColor = getActivityBarColor(activity);
+  const customColor = (activity as any).customColor || '';
+  const textColor = customColor ? getContrastColor(customColor) : undefined;
   const status = getActivityStatus(activity, currentTime);
   
   const handleDragEnd = (_: any, info: any) => {
@@ -1529,9 +1580,9 @@ const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit,
         dragElastic={0.2}
         onDragEnd={handleDragEnd}
         onClick={onEdit}
-        style={{ x: canSwipe ? x : 0, scale }}
+        style={{ x: canSwipe ? x : 0, scale, background: customColor || undefined, color: textColor || undefined }}
         className={`relative paper-card sketch-border p-5 ${canSwipe ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} transition-all ${
-          barColor
+          customColor ? '' : barColor
         }`}
       >
         <div className="flex items-center gap-5">
