@@ -393,6 +393,17 @@ app.listen(PORT, async () => {
   try {
     await initializeDatabase();
     console.log(`Backend listening on http://localhost:${PORT}`);
+
+    // Keep server awake on Render free tier (ping every 14 minutes)
+    const HEALTH_CHECK_URL = process.env.RENDER_EXTERNAL_URL || 'http://localhost:' + PORT;
+    setInterval(async () => {
+      try {
+        await fetch(`${HEALTH_CHECK_URL}/api/health`);
+        console.log('[KeepAlive] Ping enviado');
+      } catch (e) {
+        console.log('[KeepAlive] Error ping:', e instanceof Error ? e.message : String(e));
+      }
+    }, 14 * 60 * 1000); // cada 14 minutos
   } catch (error) {
     console.error('Failed to initialize database:', error);
     process.exit(1);
