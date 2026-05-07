@@ -9,11 +9,24 @@ import { Activity, Category } from '../constants';
  * Determines if a fixed activity should be hidden based on current time
  * Fixed activities (meals, routines) auto-hide after their endTime
  * Non-fixed activities (tasks, projects) persist until manually completed
+ * Only applies to the schedule for the current real-world day.
  */
-export const shouldHideFixedActivity = (activity: Activity, currentTime: Date): boolean => {
+export const shouldHideFixedActivity = (activity: Activity, currentTime: Date, isCurrentDay = true): boolean => {
+  if (!isCurrentDay) return false;
+
   // Only hide if it's marked as fixed
   const isFixed = activity.isFixed || activity.esFijo;
   if (!isFixed) return false;
+
+  // Courses and labs should remain visible in the schedule even after they end.
+  // Only hide routine-like fixed activities (meals, exercise, commute, etc.).
+  const isAcademic =
+    activity.category === Category.ACADEMIC ||
+    activity.isAcademic ||
+    activity.name.includes('(IS-') ||
+    activity.name.includes('Lab');
+
+  if (isAcademic) return false;
 
   // Parse activity end time
   const [endH, endM] = activity.endTime.split(':').map(Number);
@@ -47,7 +60,7 @@ export const canCompleteBySwipe = (activity: Activity, currentTime: Date): boole
 /**
  * Maps activity category to visual styling (border color)
  * Different colors for different types:
- * - Courses/Academic: Deep blue/steel (focus)
+ * - Courses/Academic: Burgundy / rose (focus)
  * - Fixed Routines: Soft green/gray (automatic)
  * - Tasks/Personal: Vibrant orange/lavender (manual action)
  */
@@ -61,7 +74,7 @@ export const getActivityBarColor = (activity: Activity): string => {
 
   // Fixed academic activities (courses, labs)
   if (isFixed && isAcademic) {
-    return 'border-l-4 border-l-slate-700 bg-gradient-to-r from-slate-50 to-transparent';
+    return 'border-l-4 border-l-rose-800 bg-gradient-to-r from-rose-50 via-rose-25 to-white';
   }
 
   // Fixed routine activities (meals, exercise, yoga)

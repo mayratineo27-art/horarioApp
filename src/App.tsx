@@ -178,6 +178,8 @@ export default function App() {
     return day === 0 ? 6 : day - 1;
   };
 
+  const isViewingToday = activeDayIndex === currentSystemDayIndex();
+
   const extractCourseCode = (name: string) => {
     const codeMatch = name.match(/\bIS-\d+\b/);
     if (codeMatch) return codeMatch[0];
@@ -992,8 +994,8 @@ export default function App() {
                       // Hide if manually completed
                       if (completedToday[activity.id]) return false;
                       
-                      // Auto-hide fixed activities that have passed their endTime
-                      if (shouldHideFixedActivity(activity, currentTime)) return false;
+                      // Auto-hide fixed activities only on the real current day
+                      if (shouldHideFixedActivity(activity, currentTime, isViewingToday)) return false;
                       
                       return true;
                     })
