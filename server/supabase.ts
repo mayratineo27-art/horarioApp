@@ -99,6 +99,7 @@ export interface Activity {
   esFijo?: boolean;
   courseId?: string;
   emoji?: string;
+  customColor?: string;
 }
 
 export interface DaySchedule {
@@ -134,6 +135,7 @@ export interface FixedCourseRow {
   is_exercise: boolean;
   emoji: string;
   checklist: CourseTaskItem[] | string[];
+  custom_color?: string | null;
   updated_at?: string;
 }
 
@@ -159,6 +161,7 @@ export interface CourseRecord {
   isExercise: boolean;
   emoji: string;
   checklist: CourseTaskItem[];
+  customColor?: string | null;
   completed: boolean;
 }
 
@@ -217,6 +220,7 @@ function buildCoursesFromSchedule(schedule: DaySchedule[]): CourseRecord[] {
         isExercise: activity.name.toLowerCase().includes('ejercicio') || activity.emoji === '💪',
         emoji: activity.emoji || '📘',
         checklist: [],
+        customColor: (activity as any).customColor || null,
         completed: false,
       });
     }
@@ -238,6 +242,7 @@ function courseRowToRecord(course: FixedCourseRow, checklist: CourseChecklistRow
     isExercise: course.is_exercise,
     emoji: course.emoji,
     checklist: checklist ? checklist.items : normalizeTasks(course.checklist),
+    customColor: (course as any).custom_color || null,
     completed: checklist ? checklist.completed : false,
   };
 }
@@ -358,6 +363,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
         is_exercise: course.isExercise,
         emoji: course.emoji,
         checklist: course.checklist,
+        custom_color: course.customColor || null,
         updated_at: new Date().toISOString(),
       };
       nextFixedCourses.push(row);
@@ -397,6 +403,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
           is_exercise: course.isExercise,
           emoji: course.emoji,
           checklist: course.checklist,
+          custom_color: course.customColor || null,
           updated_at: new Date().toISOString(),
         }).eq('id', courseId);
 
@@ -414,6 +421,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
           is_exercise: course.isExercise,
           emoji: course.emoji,
           checklist: course.checklist,
+          custom_color: course.customColor || null,
           updated_at: new Date().toISOString(),
         }).select('id').single();
 

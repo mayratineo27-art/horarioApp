@@ -150,6 +150,7 @@ export default function App() {
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
+  const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43'];
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -159,21 +160,6 @@ export default function App() {
   const parseMinutes = (value: string) => {
     const [hours, minutes] = value.split(':').map(Number);
     return hours * 60 + minutes;
-  };
-
-  const getContrastColor = (color: string) => {
-    try {
-      // support #rgb and #rrggbb
-      const hex = color.replace('#', '').trim();
-      const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
-      const r = parseInt(full.slice(0, 2), 16);
-      const g = parseInt(full.slice(2, 4), 16);
-      const b = parseInt(full.slice(4, 6), 16);
-      const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-      return luminance > 0.6 ? '#000000' : '#ffffff';
-    } catch (e) {
-      return '#000000';
-    }
   };
 
   const formatMinutes = (totalMinutes: number) => {
@@ -352,6 +338,17 @@ export default function App() {
     localStorage.setItem('mya_dynamics_fired', JSON.stringify(firedNotifications));
     localStorage.setItem('mya_dynamics_silenced', JSON.stringify(silencedNotifications));
     localStorage.setItem('mya_dynamics_last_date', todayStr);
+
+    // Debounced sync to backend (supabase via server) when schedule changes
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      syncScheduleToBackend({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, schedule }).catch(() => {
+        // Don't block UI on backend failures
+      });
+    }, 800);
+
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [schedule, completedToday, firedNotifications, silencedNotifications, todayStr]);
 
   // --- CLOCK & TIMERS ---
@@ -631,6 +628,8 @@ export default function App() {
 
   const handleSaveActivity = () => {
     const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
+    const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
+    const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
     if (!name.trim()) return;
 
     const checklist = checklistText
@@ -671,7 +670,7 @@ export default function App() {
       if (showEditor?.mode === 'edit' && showEditor.activityId) {
         activities = activities.map(a => 
           a.id === showEditor.activityId 
-            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id, isCourseMarked, customColor: customColor || a.customColor } 
+            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id, isCourseMarked, customColor: isValidHex(customColor) ? customColor : a.customColor } 
             : a
         );
       } else {
@@ -685,7 +684,7 @@ export default function App() {
           courseId: `manual-${Date.now()}`,
           checklist,
               isCourseMarked,
-              customColor: customColor || undefined,
+              customColor: chosenColor,
         };
         activities.push(newAct);
       }
@@ -718,7 +717,7 @@ export default function App() {
       setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
-      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
+      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE[0] });
       setChecklistText('');
       setShowEditor({ mode: 'add' });
     }
@@ -1271,7 +1270,7 @@ export default function App() {
                     <div className="mt-2 flex items-center gap-3">
                       <input
                         type="color"
-                        value={editorData.customColor || '#ffffff'}
+                        value={editorData.customColor || DEFAULT_PALETTE[0]}
                         onChange={(e) => setEditorData(prev => ({ ...prev, customColor: e.target.value }))}
                         className="w-12 h-12 p-0 border-2 rounded-lg"
                         aria-label="Seleccionar color"
@@ -1287,7 +1286,7 @@ export default function App() {
                     </div>
 
                     <div className="mt-2 flex gap-2">
-                      {['#7c3aed','#b91c1c','#0ea5a4','#0f766e','#7f1d1d','#e11d48','#0ea5a4','#0ea5f5'].map((c) => (
+                      {DEFAULT_PALETTE.map((c) => (
                         <button
                           key={c}
                           onClick={() => setEditorData(prev => ({ ...prev, customColor: c }))}
@@ -1512,6 +1511,20 @@ interface DraggableActivityProps {
   onComplete: () => void;
   colorClass: string;
 }
+
+const getContrastColor = (color: string) => {
+  try {
+    const hex = color.replace('#', '').trim();
+    const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance > 0.6 ? '#000000' : '#ffffff';
+  } catch (e) {
+    return '#000000';
+  }
+};
 
 const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit, onComplete, colorClass }) => {
   const x = useMotionValue(0);

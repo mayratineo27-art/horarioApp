@@ -85,13 +85,15 @@ export async function syncSubscriptionToBackend(payload: {
     subscription: {
       endpoint: payload.subscription.endpoint,
       keys: {
-        p256dh: payload.subscription.getKey?.('p256dh')
-          ? new TextDecoder().decode(payload.subscription.getKey('p256dh'))
-          : '',
-        auth: payload.subscription.getKey?.('auth')
-          ? new TextDecoder().decode(payload.subscription.getKey('auth'))
-          : '',
-      },
+  p256dh: payload.subscription.getKey?.('p256dh')
+    ? btoa(String.fromCharCode(...new Uint8Array(payload.subscription.getKey('p256dh')!)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    : '',
+  auth: payload.subscription.getKey?.('auth')
+    ? btoa(String.fromCharCode(...new Uint8Array(payload.subscription.getKey('auth')!)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    : '',
+},
       expirationTime: payload.subscription.expirationTime || null,
     },
     timezone: payload.timezone,

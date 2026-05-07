@@ -12,6 +12,7 @@ create table if not exists public.fixed_courses (
   es_fijo boolean not null default true,
   is_exercise boolean not null default false,
   emoji text,
+  custom_color text,
   checklist jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
