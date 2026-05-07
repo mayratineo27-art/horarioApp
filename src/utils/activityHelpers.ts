@@ -66,14 +66,15 @@ export const canCompleteBySwipe = (activity: Activity, currentTime: Date): boole
  */
 export const getActivityBarColor = (activity: Activity): string => {
   const isFixed = activity.isFixed || activity.esFijo;
+  const isCourse = activity.isCourseMarked || activity.isAcademic || activity.name.includes('(IS-') || activity.name.includes('Lab');
   const isAcademic =
     activity.category === Category.ACADEMIC ||
     activity.isAcademic ||
     activity.name.includes('(IS-') ||
     activity.name.includes('Lab');
 
-  // Fixed academic activities (courses, labs)
-  if (isFixed && isAcademic) {
+  // Course activities (marked or auto-detected)
+  if (isCourse) {
     return 'bg-rose-50 border-l-4 border-rose-800 text-rose-900';
   }
 

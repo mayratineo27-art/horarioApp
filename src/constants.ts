@@ -17,6 +17,7 @@ export interface Activity {
   isFixed?: boolean;
   esFijo?: boolean;
   isAcademic?: boolean;
+  isCourseMarked?: boolean;
   description?: string;
   emoji?: string;
   courseId?: string;
@@ -66,8 +67,8 @@ export const INITIAL_SCHEDULE: DaySchedule[] = [
     day: 'Martes',
     activities: [
       ...FIXED_MORNING.map(a => ({ ...a, id: `Martes-${a.id}` })),
-      { id: 'M-c1', name: 'Inv. Científica (IS-481)', category: Category.ACADEMIC, startTime: '08:00', endTime: '10:00', isFixed: true, isAcademic: true, emoji: '🔬' },
-      { id: 'M-c2', name: 'Gestión Riesgos TI', category: Category.ACADEMIC, startTime: '11:00', endTime: '12:00', isFixed: true, isAcademic: true, emoji: '⚠️' },
+      { id: 'M-c1', name: 'Investigación Científica (IS-481)', category: Category.ACADEMIC, startTime: '08:00', endTime: '10:00', isFixed: true, isAcademic: true, emoji: '🔬' },
+      { id: 'M-c2', name: 'Gestión de Riesgos TI (IS-486)', category: Category.ACADEMIC, startTime: '11:00', endTime: '12:00', isFixed: true, isAcademic: true, emoji: '⚠️' },
       { id: 'M-a1', name: 'Almuerzo', category: Category.WELLNESS, startTime: '13:40', endTime: '15:00', isFixed: true, emoji: '🍽️' },
       { id: 'M-tasks-p', name: 'Tareas Personales / Proyectos', category: Category.SPECIAL, startTime: '15:00', endTime: '18:20', emoji: '✨' },
       { id: 'M-yoga', name: 'Yoga de bienvenida', category: Category.WELLNESS, startTime: '18:20', endTime: '18:35', isFixed: true, emoji: '🧘' },
@@ -82,7 +83,7 @@ export const INITIAL_SCHEDULE: DaySchedule[] = [
     activities: [
       ...FIXED_MORNING.map(a => ({ ...a, id: `Miercoles-${a.id}` })),
       { id: 'X-t1', name: 'Tarea/Estudio', category: Category.ACADEMIC, startTime: '08:00', endTime: '11:00', emoji: '📚' },
-      { id: 'X-c1', name: 'Inv. Científica', category: Category.ACADEMIC, startTime: '11:00', endTime: '12:00', isFixed: true, isAcademic: true, emoji: '🔬' },
+      { id: 'X-c1', name: 'Investigación Científica (IS-481)', category: Category.ACADEMIC, startTime: '11:00', endTime: '12:00', isFixed: true, isAcademic: true, emoji: '🔬' },
       { id: 'X-a1', name: 'Almuerzo', category: Category.WELLNESS, startTime: '13:40', endTime: '15:00', isFixed: true, emoji: '🍽️' },
       { id: 'X-lab', name: 'Lab. Calidad Software (IS-483)', category: Category.ACADEMIC, startTime: '16:00', endTime: '18:00', isFixed: true, isAcademic: true, emoji: '🔍' },
       { id: 'X-home', name: 'Regreso a casa', category: Category.WELLNESS, startTime: '18:00', endTime: '18:20', isFixed: true, emoji: '🏠' },
@@ -97,7 +98,7 @@ export const INITIAL_SCHEDULE: DaySchedule[] = [
     day: 'Jueves',
     activities: [
       ...FIXED_MORNING.map(a => ({ ...a, id: `Jueves-${a.id}` })),
-      { id: 'J-c1', name: 'Gestión de Datos', category: Category.ACADEMIC, startTime: '07:00', endTime: '09:00', isFixed: true, isAcademic: true, emoji: '📊' },
+      { id: 'J-c1', name: 'Gestión de Datos (IS-488)', category: Category.ACADEMIC, startTime: '07:00', endTime: '09:00', isFixed: true, isAcademic: true, emoji: '📊' },
       { id: 'J-c2', name: 'Redes de Datos (IS-485)', category: Category.ACADEMIC, startTime: '09:00', endTime: '10:30', isFixed: true, isAcademic: true, emoji: '🌐' },
       { id: 'J-a1', name: 'Almuerzo', category: Category.WELLNESS, startTime: '13:40', endTime: '15:00', isFixed: true, emoji: '🍽️' },
       { id: 'J-lab', name: 'Lab. Redes Datos', category: Category.ACADEMIC, startTime: '16:00', endTime: '18:00', isFixed: true, isAcademic: true, emoji: '🌐' },
@@ -114,7 +115,7 @@ export const INITIAL_SCHEDULE: DaySchedule[] = [
     activities: [
       ...FIXED_MORNING.map(a => ({ ...a, id: `Viernes-${a.id}` })),
       { id: 'V-c1', name: 'Calidad Software (IS-489)', category: Category.ACADEMIC, startTime: '07:00', endTime: '08:00', isFixed: true, isAcademic: true, emoji: '✅' },
-      { id: 'V-c2', name: 'Gestión de Datos', category: Category.ACADEMIC, startTime: '08:00', endTime: '09:00', isFixed: true, isAcademic: true, emoji: '📊' },
+      { id: 'V-c2', name: 'Gestión de Datos (IS-488)', category: Category.ACADEMIC, startTime: '08:00', endTime: '09:00', isFixed: true, isAcademic: true, emoji: '📊' },
       { id: 'V-a1', name: 'Almuerzo', category: Category.WELLNESS, startTime: '13:40', endTime: '15:00', isFixed: true, emoji: '🍽️' },
       { id: 'V-lab', name: 'Lab. Gestión Datos', category: Category.ACADEMIC, startTime: '16:00', endTime: '18:00', isFixed: true, isAcademic: true, emoji: '📊' },
       { id: 'V-home', name: 'Regreso a casa', category: Category.WELLNESS, startTime: '18:00', endTime: '18:20', isFixed: true, emoji: '🏠' },

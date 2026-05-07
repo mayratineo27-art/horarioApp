@@ -147,7 +147,7 @@ export default function App() {
   const [newCourseTask, setNewCourseTask] = useState('');
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
-  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
+  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false });
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -606,7 +606,7 @@ export default function App() {
   };
 
   const handleSaveActivity = () => {
-    const { name, start, end, emoji } = editorData;
+    const { name, start, end, emoji, isCourseMarked } = editorData;
     if (!name.trim()) return;
 
     const checklist = checklistText
@@ -614,7 +614,16 @@ export default function App() {
       .map(item => item.trim())
       .filter(Boolean);
 
-    const conflict = detectConflict(activeDayIndex, start, end, showEditor?.mode === 'edit' ? showEditor.activityId : undefined);
+    // In edit mode, only check conflict if the time actually changed
+    let shouldCheckConflict = true;
+    if (showEditor?.mode === 'edit' && showEditor.activityId) {
+      const currentActivity = schedule[activeDayIndex].activities.find(a => a.id === showEditor.activityId);
+      if (currentActivity && currentActivity.startTime === start && currentActivity.endTime === end) {
+        shouldCheckConflict = false; // Only name/emoji changed, skip conflict check
+      }
+    }
+
+    const conflict = shouldCheckConflict ? detectConflict(activeDayIndex, start, end, showEditor?.mode === 'edit' ? showEditor.activityId : undefined) : null;
     if (conflict) {
       const duration = parseMinutes(end) - parseMinutes(start);
       const suggestion = getNearestFreeBlock(activeDayIndex, duration, parseMinutes(start), showEditor?.activityId);
@@ -638,7 +647,7 @@ export default function App() {
       if (showEditor?.mode === 'edit' && showEditor.activityId) {
         activities = activities.map(a => 
           a.id === showEditor.activityId 
-            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id } 
+            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id, isCourseMarked } 
             : a
         );
       } else {
@@ -651,6 +660,7 @@ export default function App() {
           emoji,
           courseId: `manual-${Date.now()}`,
           checklist,
+          isCourseMarked,
         };
         activities.push(newAct);
       }
@@ -666,7 +676,7 @@ export default function App() {
       type: 'success'
     });
     setShowEditor(null);
-    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
+    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false });
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -676,12 +686,13 @@ export default function App() {
         name: activity.name,
         start: activity.startTime,
         end: activity.endTime,
-        emoji: activity.emoji || '📍'
+        emoji: activity.emoji || '📍',
+        isCourseMarked: activity.isCourseMarked || false
       });
       setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
-      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍' });
+      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false });
       setChecklistText('');
       setShowEditor({ mode: 'add' });
     }
@@ -1214,6 +1225,19 @@ export default function App() {
                         onChange={(e) => setEditorData(prev => ({ ...prev, end: e.target.value }))}
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 px-4 py-3 bg-rose-50 border-2 border-rose-200 rounded-lg">
+                    <input 
+                      type="checkbox"
+                      id="isCourse"
+                      checked={editorData.isCourseMarked}
+                      onChange={(e) => setEditorData(prev => ({ ...prev, isCourseMarked: e.target.checked }))}
+                      className="w-5 h-5 cursor-pointer accent-rose-700"
+                    />
+                    <label htmlFor="isCourse" className="text-sm font-bold text-rose-700 cursor-pointer flex-1">
+                      🎓 Marcar como curso
+                    </label>
                   </div>
                 </div>
 
