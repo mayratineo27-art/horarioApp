@@ -51,6 +51,14 @@ import {
   syncCoursesToBackend,
   saveCourseChecklistToBackend,
 } from './push';
+import {
+  shouldHideFixedActivity,
+  canCompleteBySwipe,
+  getActivityBarColor,
+  getCategoryBadgeColor,
+  getActivityStatus,
+  shouldDimActivity,
+} from './utils/activityHelpers';
 
 type DrawerView = 'horario' | 'mis-cursos';
 
@@ -143,7 +151,7 @@ export default function App() {
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
-  const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; start: string; end: string } | null>(null);
+  const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; suggestionStart: string; suggestionEnd: string; start: string; end: string } | null>(null);
   const [checklistText, setChecklistText] = useState('');
 
   const parseMinutes = (value: string) => {
@@ -179,6 +187,8 @@ export default function App() {
 
   const stripCourseCode = (name: string) => name.replace(/\s*\(IS-\d+\)/, '').trim();
 
+  const isActivityArchived = (activityId: string) => !!completedToday[activityId];
+
   const weeklyResetStorageKey = 'mya_dynamics_last_fixed_restore';
 
   const restoreFixedCourses = () => {
@@ -212,8 +222,9 @@ export default function App() {
     }
   };
 
-  const getNearestFreeBlock = (dayIndex: number, durationMinutes: number, desiredStart = 300) => {
+  const getNearestFreeBlock = (dayIndex: number, durationMinutes: number, desiredStart = 300, excludedActivityId?: string) => {
     const dayActivities = schedule[dayIndex].activities
+      .filter(activity => !isActivityArchived(activity.id) && activity.id !== excludedActivityId)
       .map(activity => ({ ...activity, start: parseMinutes(activity.startTime), end: parseMinutes(activity.endTime) }))
       .sort((a, b) => a.start - b.start);
 
@@ -241,7 +252,7 @@ export default function App() {
     const newStart = parseMinutes(start);
     const newEnd = parseMinutes(end);
     return schedule[dayIndex].activities.find(activity => {
-      if (activity.id === currentId) return false;
+      if (activity.id === currentId || isActivityArchived(activity.id)) return false;
       const existingStart = parseMinutes(activity.startTime);
       const existingEnd = parseMinutes(activity.endTime);
       return newStart < existingEnd && newEnd > existingStart;
@@ -534,7 +545,7 @@ export default function App() {
   // --- HANDLERS ---
   const markAsCompleted = (activityId: string) => {
     setCompletedToday(prev => ({ ...prev, [activityId]: true }));
-    setNotification({ title: '✅ ¡Completada!', message: 'Actividad archivada por hoy.', type: 'success' });
+    setNotification({ title: '✅ Quitada', message: 'La actividad salió del horario y ya no bloquea conflictos hoy.', type: 'success' });
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -604,11 +615,16 @@ export default function App() {
     const conflict = detectConflict(activeDayIndex, start, end, showEditor?.mode === 'edit' ? showEditor.activityId : undefined);
     if (conflict) {
       const duration = parseMinutes(end) - parseMinutes(start);
-      const suggestion = getNearestFreeBlock(activeDayIndex, duration, parseMinutes(start));
+      const suggestion = getNearestFreeBlock(activeDayIndex, duration, parseMinutes(start), showEditor?.activityId);
+      const [suggestionStart, suggestionEnd] = suggestion.split(' - ');
       setConflictModal({
         title: 'Conflicto de horario detectado',
         message: `${name.trim()} choca con ${conflict.name} (${conflict.startTime} - ${conflict.endTime}).`,
         suggestion: `Tiempo libre más cercano: ${suggestion}`,
+        suggestionStart,
+        suggestionEnd,
+        start,
+        end,
       });
       return;
     }
@@ -972,7 +988,15 @@ export default function App() {
               <div onClick={(e) => e.stopPropagation()}>
                 <AnimatePresence mode="popLayout" initial={false}>
                   {schedule[activeDayIndex].activities
-                    .filter(activity => !completedToday[activity.id])
+                    .filter(activity => {
+                      // Hide if manually completed
+                      if (completedToday[activity.id]) return false;
+                      
+                      // Auto-hide fixed activities that have passed their endTime
+                      if (shouldHideFixedActivity(activity, currentTime)) return false;
+                      
+                      return true;
+                    })
                     .map((activity) => (
                       <DraggableActivity 
                         key={activity.id} 
@@ -1350,15 +1374,13 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => {
-                      const suggestion = getNearestFreeBlock(activeDayIndex, parseMinutes(editorData.end) - parseMinutes(editorData.start), parseMinutes(editorData.start));
-                      const [suggestedStart, suggestedEnd] = suggestion.split(' - ');
-                      setEditorData(prev => ({ ...prev, start: suggestedStart, end: suggestedEnd }));
+                      setEditorData(prev => ({ ...prev, start: conflictModal.suggestionStart, end: conflictModal.suggestionEnd }));
                       setConflictModal(null);
-                      setNotification({ title: 'Bloque sugerido', message: `Se ajustó a ${suggestion}.`, type: 'info' });
+                      setNotification({ title: 'Ajustado', message: `Se movió al bloque ${conflictModal.suggestionStart} - ${conflictModal.suggestionEnd}.`, type: 'info' });
                     }}
                     className="flex-1 py-3 rounded-xl border-2 border-indigo-900 bg-indigo-900 font-bold text-white"
                   >
-                    Usar sugerencia
+                    Ajustar
                   </button>
                 </div>
               </motion.div>
@@ -1411,31 +1433,70 @@ const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit,
   const background = useTransform(x, [0, 100], ['rgba(255,255,255,0)', 'rgba(74, 222, 128, 0.2)']);
   const checkOpacity = useTransform(x, [0, 80, 100], [0, 0.5, 1]);
   const scale = useTransform(x, [0, 100], [1, 1.02]);
+  const currentTime = new Date();
+  
+  // Determine if swipe should be allowed
+  const canSwipe = canCompleteBySwipe(activity, currentTime);
+  const isDimmed = shouldDimActivity(activity, currentTime, false);
+  const isFixed = activity.isFixed || activity.esFijo;
+  const barColor = getActivityBarColor(activity);
+  const status = getActivityStatus(activity, currentTime);
   
   const handleDragEnd = (_: any, info: any) => {
-    if (info.offset.x > 140) {
+    if (info.offset.x > 110 && canSwipe) {
       onComplete();
     }
   };
 
   return (
-    <div className="relative group">
-      {/* Background feedback for swipe */}
-      <motion.div 
-        style={{ background, opacity: checkOpacity }}
-        className="absolute inset-0 rounded-2xl flex items-center justify-start pl-8"
-      >
-        <CheckCircle2 className="w-8 h-8 text-green-500" />
-      </motion.div>
+    <div className={`relative group ${isDimmed ? 'opacity-60' : ''}`}>
+      {/* Background feedback for swipe - only visible if swipe allowed */}
+      {canSwipe && (
+        <motion.div 
+          style={{ background, opacity: checkOpacity }}
+          className="absolute inset-0 rounded-2xl flex items-center justify-start pl-8"
+        >
+          <CheckCircle2 className="w-8 h-8 text-green-500" />
+        </motion.div>
+      )}
+
+      {/* Quick complete button - disabled if swipe not allowed */}
+      {canSwipe && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onComplete();
+          }}
+          className="absolute top-3 right-3 z-10 w-9 h-9 rounded-full border-2 border-green-500 bg-white text-green-600 flex items-center justify-center shadow-sm active:scale-95 transition hover:bg-green-50"
+          aria-label={`Marcar ${activity.name} como completada`}
+          title="Quitar del horario"
+        >
+          <CheckCircle2 className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Activity type indicator */}
+      <div className="absolute top-3 left-3 z-10">
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+          isFixed 
+            ? 'bg-emerald-100 text-emerald-700' 
+            : 'bg-amber-100 text-amber-700'
+        }`}>
+          {isFixed ? '📌 Fija' : '📝 Tarea'}
+        </span>
+      </div>
 
       <motion.div
-        drag="x"
+        drag={canSwipe ? "x" : false}
         dragConstraints={{ left: 0, right: 200 }}
         dragElastic={0.2}
         onDragEnd={handleDragEnd}
         onClick={onEdit}
-        style={{ x, scale }}
-        className={`relative paper-card sketch-border p-5 bg-white cursor-grab active:cursor-grabbing transition-colors`}
+        style={{ x: canSwipe ? x : 0, scale }}
+        className={`relative paper-card sketch-border p-5 bg-white ${canSwipe ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} transition-all ${
+          barColor
+        }`}
       >
         <div className="flex items-center gap-5">
           <div className="flex flex-col items-center min-w-[50px] opacity-40">
@@ -1450,9 +1511,12 @@ const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit,
                 {activity.category}
               </span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-2">
               <span className="text-2xl">{activity.emoji}</span>
               <h3 className="font-hand font-bold text-2xl leading-tight text-slate-800">{activity.name}</h3>
+            </div>
+            <div className={`text-xs ${status.className}`}>
+              {status.label}
             </div>
           </div>
 

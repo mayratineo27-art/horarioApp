@@ -7,14 +7,26 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Mya Dynamics', body: 'Tienes una nueva notificacion.', icon: '/icons/icon-192.svg', badge: '/icons/badge-72.svg', data: { url: '/' } };
+  // Default payload with fallback structure
+  let payload = {
+    title: 'Mya Dynamics',
+    body: 'Tienes una notificación de actividad próxima.',
+    icon: '/icons/icon-192.svg',
+    badge: '/icons/badge-72.svg',
+    data: { url: '/', activityId: null, activityTime: null },
+  };
 
   try {
     if (event.data) {
-      payload = { ...payload, ...event.data.json() };
+      const incomingData = event.data.json();
+      // Merge incoming data with defaults to preserve all fields
+      payload = { ...payload, ...incomingData };
+      if (incomingData.data) {
+        payload.data = { ...payload.data, ...incomingData.data };
+      }
     }
-  } catch {
-    // Keep default payload when push body is not valid JSON.
+  } catch (e) {
+    console.warn('[SW] Push data not JSON, using defaults:', e.message);
   }
 
   event.waitUntil(
@@ -22,7 +34,7 @@ self.addEventListener('push', (event) => {
       body: payload.body,
       icon: payload.icon,
       badge: payload.badge,
-      data: payload.data,
+      data: payload.data || {},
       vibrate: [200, 80, 200, 80, 200],
       tag: 'mya-dynamics-reminder',
       renotify: true,
@@ -33,22 +45,25 @@ self.addEventListener('push', (event) => {
         { action: 'dismiss', title: 'Cerrar' },
       ],
     }).then(() => {
+      console.log('[SW] Notification shown:', payload.title);
       // Notify any open clients to play a sound (service workers cannot play audio directly)
       return self.clients.matchAll({ includeUncontrolled: true }).then(clients => {
         for (const client of clients) {
           try {
-            client.postMessage({ type: 'play-sound' });
+            client.postMessage({ 
+              type: 'play-sound',
+              activityId: payload.data?.activityId,
+            });
           } catch (e) {
-            // ignore
+            console.warn('[SW] Could not post message to client:', e.message);
           }
         }
       });
     }).catch(err => {
-      console.error('Notification error:', err);
+      console.error('[SW] Notification error:', err);
     })
   );
 });
-// Note: audio playback must be performed on a client page; service workers cannot play audio directly.
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
@@ -59,17 +74,21 @@ self.addEventListener('notificationclick', (event) => {
   }
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ('focus' in client) {
-          client.focus();
-          if ('navigate' in client) {
-            client.navigate(targetUrl);
-          }
-          return;
+    self.clients.matchAll({ type: 'window' }).then(clientList => {
+      // Look for an existing window to focus
+      for (const client of clientList) {
+        if (client.url === targetUrl && 'focus' in client) {
+          return client.focus();
         }
       }
-      return self.clients.openWindow(targetUrl);
-    }),
+      // If no window exists, open a new one
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
   );
+});
+
+self.addEventListener('notificationclose', (event) => {
+  console.log('[SW] Notification dismissed:', event.notification.tag);
 });

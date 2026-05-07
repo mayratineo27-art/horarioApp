@@ -79,15 +79,39 @@ export async function syncSubscriptionToBackend(payload: {
   schedule: unknown;
 }) {
   const baseUrl = await getApiBaseUrl();
+  
+  // Serialize PushSubscription completely to preserve all fields
+  const serializedPayload = {
+    subscription: {
+      endpoint: payload.subscription.endpoint,
+      keys: {
+        p256dh: payload.subscription.getKey?.('p256dh')
+          ? new TextDecoder().decode(payload.subscription.getKey('p256dh'))
+          : '',
+        auth: payload.subscription.getKey?.('auth')
+          ? new TextDecoder().decode(payload.subscription.getKey('auth'))
+          : '',
+      },
+      expirationTime: payload.subscription.expirationTime || null,
+    },
+    timezone: payload.timezone,
+    schedule: payload.schedule,
+  };
+
   const res = await fetch(`${baseUrl}/api/push/subscribe`, {
     method: 'POST',
     headers: await buildHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(payload),
+    body: JSON.stringify(serializedPayload),
   });
 
   if (!res.ok) {
+    const error = await res.text();
+    console.error('[Push] Backend error:', error);
     throw new Error('No se pudo guardar la suscripcion en backend.');
   }
+  
+  const result = await res.json();
+  console.log('[Push] Subscription registered:', result.message);
 }
 
 export async function syncNotificationHours(notificationHourStart: number, notificationHourEnd: number) {

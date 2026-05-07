@@ -126,22 +126,37 @@ app.post('/api/push/subscribe', async (req, res) => {
   };
 
   if (!subscription || !subscription.endpoint) {
-    res.status(400).json({ ok: false, error: 'Invalid subscription' });
+    res.status(400).json({ ok: false, error: 'Invalid subscription: missing endpoint', received: !!subscription });
     return;
   }
 
   try {
+    // Normalize subscription object to ensure all fields are preserved in JSONB
+    const normalizedSubscription = {
+      endpoint: subscription.endpoint,
+      keys: {
+        p256dh: subscription.keys?.p256dh || '',
+        auth: subscription.keys?.auth || '',
+      },
+      expirationTime: (subscription as any).expirationTime || null,
+    };
+    
     const config = await loadConfig();
-    config.subscription = subscription;
+    config.subscription = normalizedSubscription;
     config.timezone = timezone || config.timezone || 'America/Santo_Domingo';
     if (Array.isArray(schedule)) {
       config.schedule = schedule;
     }
+    console.log(`[✓] Push subscription registered for timezone: ${config.timezone}`);
     await saveConfig(config);
-    res.json({ ok: true });
+    res.json({ ok: true, message: 'Subscription saved and active for push notifications' });
   } catch (error) {
     console.error('Error saving subscription:', error);
-    res.status(500).json({ ok: false, error: 'Failed to save subscription' });
+    res.status(500).json({ 
+      ok: false, 
+      error: 'Failed to save subscription',
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
