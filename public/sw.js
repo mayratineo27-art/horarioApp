@@ -6,6 +6,47 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+/**
+ * Determines vibration pattern based on activity type and time until activity
+ * Exercises get priority: more intense vibration pattern
+ */
+function getVibrationPattern(payload) {
+  const activityName = payload.body || '';
+  const isExercise = 
+    activityName.toLowerCase().includes('ejercicio') ||
+    activityName.toLowerCase().includes('piernas') ||
+    activityName.toLowerCase().includes('glúteos') ||
+    activityName.toLowerCase().includes('gluteos') ||
+    payload.data?.isExercise === true;
+
+  if (isExercise) {
+    // Extra intense vibration for exercise (💪)
+    return [300, 100, 300, 100, 300]; // Stronger pattern
+  }
+
+  // Standard vibration for other activities
+  return [200, 80, 200, 80, 200];
+}
+
+/**
+ * Determines audio cue based on minutes until activity
+ * 90 min: gentle beep
+ * 30 min: medium alert
+ * 10 min: urgent alert
+ */
+function getSoundTag(minutesUntilActivity) {
+  if (minutesUntilActivity === 90 || minutesUntilActivity === '90') {
+    return 'sound-90-min'; // Gentle beep
+  }
+  if (minutesUntilActivity === 30 || minutesUntilActivity === '30') {
+    return 'sound-30-min'; // Medium alert
+  }
+  if (minutesUntilActivity === 10 || minutesUntilActivity === '10') {
+    return 'sound-10-min'; // Urgent alert
+  }
+  return 'sound-default';
+}
+
 self.addEventListener('push', (event) => {
   // Default payload with fallback structure
   let payload = {
@@ -13,7 +54,13 @@ self.addEventListener('push', (event) => {
     body: 'Tienes una notificación de actividad próxima.',
     icon: '/icons/icon-192.svg',
     badge: '/icons/badge-72.svg',
-    data: { url: '/', activityId: null, activityTime: null },
+    data: { 
+      url: '/', 
+      activityId: null, 
+      activityTime: null,
+      minutesUntil: null,
+      isExercise: false,
+    },
   };
 
   try {
@@ -29,30 +76,50 @@ self.addEventListener('push', (event) => {
     console.warn('[SW] Push data not JSON, using defaults:', e.message);
   }
 
+  const activityName = payload.body || '';
+  const isExercise = 
+    activityName.toLowerCase().includes('ejercicio') ||
+    activityName.toLowerCase().includes('piernas') ||
+    activityName.toLowerCase().includes('glúteos') ||
+    activityName.toLowerCase().includes('gluteos');
+
+  const vibrationPattern = getVibrationPattern(payload);
+  const soundTag = getSoundTag(payload.data?.minutesUntil);
+
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
       icon: payload.icon,
       badge: payload.badge,
       data: payload.data || {},
-      vibrate: [200, 80, 200, 80, 200],
-      tag: 'mya-dynamics-reminder',
+      vibrate: vibrationPattern,
+      tag: soundTag, // Use sound tag for grouping notifications by time window
       renotify: true,
       silent: false,
-      requireInteraction: true,
+      requireInteraction: true, // Force user to interact; don't auto-dismiss
       actions: [
         { action: 'open', title: 'Abrir' },
         { action: 'dismiss', title: 'Cerrar' },
       ],
     }).then(() => {
-      console.log('[SW] Notification shown:', payload.title);
-      // Notify any open clients to play a sound (service workers cannot play audio directly)
+      console.log('[SW] Notification shown:', {
+        title: payload.title,
+        body: payload.body,
+        isExercise,
+        vibration: vibrationPattern,
+        soundTag,
+      });
+      
+      // Notify any open clients to play a sound based on time window
       return self.clients.matchAll({ includeUncontrolled: true }).then(clients => {
         for (const client of clients) {
           try {
             client.postMessage({ 
               type: 'play-sound',
+              soundTag,
               activityId: payload.data?.activityId,
+              isExercise,
+              minutesUntil: payload.data?.minutesUntil,
             });
           } catch (e) {
             console.warn('[SW] Could not post message to client:', e.message);

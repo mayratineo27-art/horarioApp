@@ -50,6 +50,8 @@ import {
   loadCoursesFromBackend,
   syncCoursesToBackend,
   saveCourseChecklistToBackend,
+  playNotificationSound,
+  setupServiceWorkerMessageListener,
 } from './push';
 import {
   shouldHideFixedActivity,
@@ -350,6 +352,13 @@ export default function App() {
   useEffect(() => {
     registerServiceWorker().catch(() => {
       // Silent fail: app still works with local notifications.
+    });
+  }, []);
+
+  // Setup Service Worker message listener for sound notifications
+  useEffect(() => {
+    setupServiceWorkerMessageListener(({ soundTag, isExercise }) => {
+      playNotificationSound(soundTag, isExercise);
     });
   }, []);
 

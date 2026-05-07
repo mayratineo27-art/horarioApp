@@ -635,3 +635,141 @@ function getDefaultConfig(): UserConfig {
     notificationHourEnd: 22,
   };
 }
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  keys?: {
+    p256dh?: string;
+    auth?: string;
+  };
+  expirationTime?: number | null;
+};
+
+export interface UserConfigWithTimestamp {
+  user_key: string;
+  subscription?: PushSubscriptionPayload | null;
+  timezone: string;
+  notification_hour_start?: number;
+  notification_hour_end?: number;
+  last_reset_date?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Saves or updates a push subscription in Supabase user_configs table using upsert.
+ * Guarantees the subscription is properly persisted with user_key as unique identifier.
+ */
+export async function saveSubscriptionToSupabase(
+  userKey: string,
+  subscription: PushSubscriptionPayload,
+  timezone: string = 'America/Santo_Domingo'
+): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    console.log('[✓] Local storage mode: subscription persisted to user-config.json');
+    const config = loadConfigFromFile();
+    config.subscription = subscription;
+    config.timezone = timezone;
+    saveConfigToFile(config);
+    return;
+  }
+
+  try {
+    // Normalize subscription to ensure clean JSON storage
+    const normalizedSubscription: PushSubscriptionPayload = {
+      endpoint: subscription.endpoint,
+      keys: {
+        p256dh: subscription.keys?.p256dh || '',
+        auth: subscription.keys?.auth || '',
+      },
+      expirationTime: subscription.expirationTime || null,
+    };
+
+    const { error } = await supabase
+      .from('user_configs')
+      .upsert(
+        {
+          user_key: userKey,
+          subscription: normalizedSubscription,
+          timezone,
+          notification_hour_start: 7,
+          notification_hour_end: 21,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_key' }
+      );
+
+    if (error) {
+      console.error('[✗] Error upserting subscription to Supabase:', error);
+      throw error;
+    }
+
+    console.log(`[✓] Push subscription saved to Supabase for user: ${userKey}`);
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      console.warn('[⚠] Supabase schema missing, falling back to local storage');
+      saveSubscriptionToSupabase(userKey, subscription, timezone);
+      return;
+    }
+    console.error('[✗] Failed to save subscription:', error);
+    throw error;
+  }
+}
+
+/**
+ * Retrieves the last reset date for a user (for Monday resets at 05:00).
+ */
+export async function getLastResetDate(userKey: string): Promise<string | null> {
+  if (!USE_SUPABASE || !supabase) {
+    const config = loadConfigFromFile();
+    // Store in sentByDate for now in local mode
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_configs')
+      .select('last_reset_date')
+      .eq('user_key', userKey)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('[✗] Error fetching reset date:', error);
+      return null;
+    }
+
+    return data?.last_reset_date || null;
+  } catch (error) {
+    console.error('[✗] Error getting last reset date:', error);
+    return null;
+  }
+}
+
+/**
+ * Updates the last reset date for a user (called after resetting activities on Monday 05:00).
+ */
+export async function updateLastResetDate(userKey: string, resetDate: string = new Date().toISOString().split('T')[0]): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    console.log(`[✓] Local mode: reset date updated to ${resetDate}`);
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('user_configs')
+      .update({
+        last_reset_date: resetDate,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_key', userKey);
+
+    if (error) {
+      console.error('[✗] Error updating reset date:', error);
+      return;
+    }
+
+    console.log(`[✓] Reset date updated for user: ${userKey} -> ${resetDate}`);
+  } catch (error) {
+    console.error('[✗] Failed to update reset date:', error);
+  }
+}

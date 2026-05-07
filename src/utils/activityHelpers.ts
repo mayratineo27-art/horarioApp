@@ -60,9 +60,9 @@ export const canCompleteBySwipe = (activity: Activity, currentTime: Date): boole
 /**
  * Maps activity category to visual styling (border color)
  * Different colors for different types:
- * - Courses/Academic: Burgundy / rose (focus)
- * - Fixed Routines: Soft green/gray (automatic)
- * - Tasks/Personal: Vibrant orange/lavender (manual action)
+ * - Courses/Academic: Steel Blue (rigidez académica)
+ * - Fixed Routines: Soft Green or Neutral Gray (flujo automático)
+ * - Tasks/Personal: Bright Orange or Lavender (atención requerida)
  */
 export const getActivityBarColor = (activity: Activity): string => {
   const isFixed = activity.isFixed || activity.esFijo;
@@ -73,18 +73,18 @@ export const getActivityBarColor = (activity: Activity): string => {
     activity.name.includes('(IS-') ||
     activity.name.includes('Lab');
 
-  // Course activities (marked or auto-detected)
+  // Course activities (marked or auto-detected) - Steel Blue
   if (isCourse) {
-    return 'bg-rose-50 border-l-4 border-rose-800 text-rose-900';
+    return 'bg-slate-100 border-l-4 border-slate-700 text-slate-900';
   }
 
-  // Fixed routine activities (meals, exercise, yoga)
+  // Fixed routine activities (meals, exercise, yoga) - Soft Green
   if (isFixed) {
     return 'bg-emerald-50 border-l-4 border-emerald-500 text-emerald-900';
   }
 
-  // Non-fixed tasks and personal projects (require manual action)
-  return 'bg-white border-l-4 border-amber-500 text-amber-900';
+  // Non-fixed tasks and personal projects (require manual action) - Bright Orange
+  return 'bg-orange-50 border-l-4 border-orange-500 text-orange-900';
 };
 
 /**

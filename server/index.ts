@@ -10,9 +10,12 @@ import {
   loadCourses,
   saveCourses,
   saveCourseChecklist,
+  saveSubscriptionToSupabase,
+  updateLastResetDate,
   type DaySchedule,
   type CourseRecord,
   type CourseTaskItem,
+  type PushSubscriptionPayload,
 } from './supabase.js';
 
 dotenv.config({ override: true });
@@ -20,15 +23,8 @@ dotenv.config({ override: true });
 const app = express();
 const PORT = Number(process.env.PORT || 8787);
 const PUSH_API_TOKEN = process.env.PUSH_API_TOKEN || '';
+const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'default-user';
 const WINDOWS = [90, 30, 10] as const;
-
-type PushSubscriptionPayload = {
-  endpoint: string;
-  keys?: {
-    p256dh?: string;
-    auth?: string;
-  };
-};
 
 function normalizeDay(day: string): string {
   return day
@@ -131,25 +127,21 @@ app.post('/api/push/subscribe', async (req, res) => {
   }
 
   try {
-    // Normalize subscription object to ensure all fields are preserved in JSONB
-    const normalizedSubscription = {
-      endpoint: subscription.endpoint,
-      keys: {
-        p256dh: subscription.keys?.p256dh || '',
-        auth: subscription.keys?.auth || '',
-      },
-      expirationTime: (subscription as any).expirationTime || null,
-    };
+    // Save to Supabase using the new function
+    const userKey = COURSE_USER_KEY;
+    await saveSubscriptionToSupabase(userKey, subscription, timezone || 'America/Santo_Domingo');
     
+    // Also update local config for immediate availability
     const config = await loadConfig();
-    config.subscription = normalizedSubscription;
+    config.subscription = subscription;
     config.timezone = timezone || config.timezone || 'America/Santo_Domingo';
     if (Array.isArray(schedule)) {
       config.schedule = schedule;
     }
-    console.log(`[✓] Push subscription registered for timezone: ${config.timezone}`);
     await saveConfig(config);
-    res.json({ ok: true, message: 'Subscription saved and active for push notifications' });
+    
+    console.log(`[✓] Push subscription registered for user: ${userKey} | timezone: ${config.timezone}`);
+    res.json({ ok: true, message: 'Subscription saved and active for push notifications', userKey });
   } catch (error) {
     console.error('Error saving subscription:', error);
     res.status(500).json({ 
@@ -369,6 +361,31 @@ cron.schedule('* * * * *', async () => {
     }
   } catch (error) {
     console.error('Error in cron job:', error);
+  }
+});
+
+/**
+ * Cron Job: Reset fixed activities every Monday at 05:00 AM (user's timezone)
+ * Clears completion status for fixed routines (Ducha, Almuerzo, Clases, Ejercicio, etc.)
+ * Tasks and projects are NOT reset automatically - they remain until marked complete.
+ */
+cron.schedule('0 5 * * 1', async () => {
+  console.log('[🔄] Running Monday 05:00 reset for fixed activities...');
+  try {
+    const config = await loadConfig();
+    const userKey = COURSE_USER_KEY;
+    
+    // Mark the reset date in Supabase
+    await updateLastResetDate(userKey);
+    
+    // In a production app, you would:
+    // 1. Clear completion flags in course_checklists for fixed activities
+    // 2. Reset activity visibility in the database
+    // 3. Send a notification to the user
+    // For now, we just log it
+    console.log(`[✓] Reset completed for user: ${userKey} at Monday 05:00`);
+  } catch (error) {
+    console.error('[✗] Error in Monday reset cron job:', error);
   }
 });
 

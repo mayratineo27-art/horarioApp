@@ -189,3 +189,78 @@ export async function saveCourseChecklistToBackend(courseCode: string, items: un
     throw new Error('No se pudo guardar la lista del curso.');
   }
 }
+
+/**
+ * Plays an audio cue based on the notification type and time window
+ * 90 min before: gentle beep
+ * 30 min before: medium alert tone
+ * 10 min before: urgent alarm tone
+ * For exercise: higher pitch / longer duration
+ */
+export function playNotificationSound(soundTag: string, isExercise: boolean = false): void {
+  try {
+    // Create audio context and oscillators for different sound cues
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const now = audioContext.currentTime;
+
+    const playTone = (frequency: number, duration: number, volume: number = 0.3, delay: number = 0) => {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+
+      osc.frequency.value = frequency;
+      gain.gain.setValueAtTime(volume, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + delay + duration);
+
+      osc.start(now + delay);
+      osc.stop(now + delay + duration);
+    };
+
+    if (soundTag === 'sound-90-min') {
+      // Gentle beep: 400Hz, 300ms
+      playTone(400, 0.3, 0.2);
+    } else if (soundTag === 'sound-30-min') {
+      // Medium alert: 600Hz, 400ms + repeat
+      playTone(600, 0.2, 0.3);
+      playTone(600, 0.2, 0.3, 0.3); // Second beep after 300ms
+    } else if (soundTag === 'sound-10-min') {
+      // Urgent alarm: 800Hz with variations
+      if (isExercise) {
+        // Extra urgent for exercise
+        playTone(800, 0.15, 0.5);
+        playTone(900, 0.15, 0.5, 0.15);
+        playTone(800, 0.15, 0.5, 0.3);
+      } else {
+        playTone(800, 0.2, 0.4);
+        playTone(800, 0.2, 0.4, 0.2);
+        playTone(800, 0.2, 0.4, 0.4);
+      }
+    }
+  } catch (error) {
+    console.warn('[Audio] Could not play notification sound:', error);
+  }
+}
+
+/**
+ * Sets up a listener for messages from the Service Worker
+ * Called when the SW wants to play a sound notification
+ */
+export function setupServiceWorkerMessageListener(
+  onSoundMessage: (data: { soundTag: string; isExercise: boolean; minutesUntil: number }) => void
+): void {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const { type, soundTag, isExercise, minutesUntil } = event.data || {};
+
+    if (type === 'play-sound') {
+      console.log('[Client] SW message received: play-sound', { soundTag, isExercise, minutesUntil });
+      onSoundMessage({ soundTag: soundTag || 'sound-default', isExercise: !!isExercise, minutesUntil: minutesUntil || 0 });
+    }
+  });
+}
+
