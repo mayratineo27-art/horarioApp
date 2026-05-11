@@ -16,6 +16,32 @@ const DATA_FILE = path.join(DATA_DIR, 'user-config.json');
 const COURSE_DATA_FILE = path.join(DATA_DIR, 'course-store.json');
 const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'default-user';
 
+const COURSE_TABLES = {
+  fixedCourses: 'fixed_courses',
+  courseChecklists: 'course_checklists',
+} as const;
+
+const COURSE_COLS = {
+  id: 'identificación',
+  userKey: 'clave_de_usuario',
+  courseCode: 'código_del_curso',
+  name: 'nombre',
+  category: 'categoría',
+  dayOfWeek: 'día_de_la_semana',
+  startTime: 'hora_de_inicio',
+  endTime: 'hora_final',
+  esFijo: 'es_fijo',
+  isExercise: 'es_ejercicio',
+  emoji: 'emoji',
+  checklist: 'lista de verificación',
+  customColor: 'color_personalizado',
+  createdAt: 'creado_en',
+  updatedAt: 'actualizado_en',
+  courseId: 'ID del curso',
+  items: 'elementos',
+  completed: 'terminado',
+} as const;
+
 export const supabase = USE_SUPABASE ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 function ensureDataFile() {
@@ -267,17 +293,17 @@ export async function loadCourses(): Promise<CourseRecord[]> {
 
   try {
     const { data: fixedCourses, error: fixedCoursesError } = await supabase
-      .from('fixed_courses')
+      .from(COURSE_TABLES.fixedCourses)
       .select('*')
-      .eq('user_key', COURSE_USER_KEY)
-      .order('course_code', { ascending: true });
+      .eq(COURSE_COLS.userKey, COURSE_USER_KEY)
+      .order(COURSE_COLS.courseCode, { ascending: true });
 
     if (fixedCoursesError) throw fixedCoursesError;
 
     const { data: checklists, error: checklistsError } = await supabase
-      .from('course_checklists')
+      .from(COURSE_TABLES.courseChecklists)
       .select('*')
-      .eq('user_key', COURSE_USER_KEY);
+      .eq(COURSE_COLS.userKey, COURSE_USER_KEY);
 
     if (checklistsError) throw checklistsError;
 
@@ -294,32 +320,32 @@ export async function loadCourses(): Promise<CourseRecord[]> {
     const checklistsByCode = new Map<string, CourseChecklistRow>();
     for (const row of checklists || []) {
       checklistsByCode.set(row.course_code, {
-        id: row.id,
-        user_key: row.user_key,
-        course_id: row.course_id,
-        course_code: row.course_code,
-        items: normalizeTasks(row.items),
-        completed: !!row.completed,
-        updated_at: row.updated_at,
+        id: row[COURSE_COLS.id],
+        user_key: row[COURSE_COLS.userKey],
+        course_id: row[COURSE_COLS.courseId],
+        course_code: row[COURSE_COLS.courseCode],
+        items: normalizeTasks(row[COURSE_COLS.items]),
+        completed: !!row[COURSE_COLS.completed],
+        updated_at: row[COURSE_COLS.updatedAt],
       });
     }
 
     return (fixedCourses || []).map((course: any) =>
       courseRowToRecord(
         {
-          id: course.id,
-          user_key: course.user_key,
-          course_code: course.course_code,
-          name: course.name,
-          category: course.category,
-          day_of_week: course.day_of_week,
-          start_time: course.start_time,
-          end_time: course.end_time,
-          es_fijo: course.es_fijo,
-          is_exercise: course.is_exercise,
-          emoji: course.emoji,
-          checklist: normalizeTasks(course.checklist),
-          updated_at: course.updated_at,
+          id: course[COURSE_COLS.id],
+          user_key: course[COURSE_COLS.userKey],
+          course_code: course[COURSE_COLS.courseCode],
+          name: course[COURSE_COLS.name],
+          category: course[COURSE_COLS.category],
+          day_of_week: course[COURSE_COLS.dayOfWeek],
+          start_time: course[COURSE_COLS.startTime],
+          end_time: course[COURSE_COLS.endTime],
+          es_fijo: course[COURSE_COLS.esFijo],
+          is_exercise: course[COURSE_COLS.isExercise],
+          emoji: course[COURSE_COLS.emoji],
+          checklist: normalizeTasks(course[COURSE_COLS.checklist]),
+          updated_at: course[COURSE_COLS.updatedAt],
         },
         checklistsByCode.get(course.course_code) || null,
       ),
@@ -384,59 +410,59 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
   try {
     for (const course of courses) {
       const existingCourse = await supabase
-        .from('fixed_courses')
-        .select('id')
-        .eq('user_key', COURSE_USER_KEY)
-        .eq('course_code', course.courseCode)
+        .from(COURSE_TABLES.fixedCourses)
+        .select(COURSE_COLS.id)
+        .eq(COURSE_COLS.userKey, COURSE_USER_KEY)
+        .eq(COURSE_COLS.courseCode, course.courseCode)
         .maybeSingle();
 
-      let courseId = existingCourse.data?.id || null;
+      let courseId = existingCourse.data?.[COURSE_COLS.id] || null;
 
       if (courseId) {
-        const { error } = await supabase.from('fixed_courses').update({
-          name: course.name,
-          category: course.category,
-          day_of_week: course.dayOfWeek,
-          start_time: course.startTime,
-          end_time: course.endTime,
-          es_fijo: course.esFijo,
-          is_exercise: course.isExercise,
-          emoji: course.emoji,
-          checklist: course.checklist,
-          custom_color: course.customColor || null,
-          updated_at: new Date().toISOString(),
-        }).eq('id', courseId);
+        const { error } = await supabase.from(COURSE_TABLES.fixedCourses).update({
+          [COURSE_COLS.name]: course.name,
+          [COURSE_COLS.category]: course.category,
+          [COURSE_COLS.dayOfWeek]: course.dayOfWeek,
+          [COURSE_COLS.startTime]: course.startTime,
+          [COURSE_COLS.endTime]: course.endTime,
+          [COURSE_COLS.esFijo]: course.esFijo,
+          [COURSE_COLS.isExercise]: course.isExercise,
+          [COURSE_COLS.emoji]: course.emoji,
+          [COURSE_COLS.checklist]: course.checklist,
+          [COURSE_COLS.customColor]: course.customColor || null,
+          [COURSE_COLS.updatedAt]: new Date().toISOString(),
+        }).eq(COURSE_COLS.id, courseId);
 
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from('fixed_courses').insert({
-          user_key: COURSE_USER_KEY,
-          course_code: course.courseCode,
-          name: course.name,
-          category: course.category,
-          day_of_week: course.dayOfWeek,
-          start_time: course.startTime,
-          end_time: course.endTime,
-          es_fijo: course.esFijo,
-          is_exercise: course.isExercise,
-          emoji: course.emoji,
-          checklist: course.checklist,
-          custom_color: course.customColor || null,
-          updated_at: new Date().toISOString(),
+        const { data, error } = await supabase.from(COURSE_TABLES.fixedCourses).insert({
+          [COURSE_COLS.userKey]: COURSE_USER_KEY,
+          [COURSE_COLS.courseCode]: course.courseCode,
+          [COURSE_COLS.name]: course.name,
+          [COURSE_COLS.category]: course.category,
+          [COURSE_COLS.dayOfWeek]: course.dayOfWeek,
+          [COURSE_COLS.startTime]: course.startTime,
+          [COURSE_COLS.endTime]: course.endTime,
+          [COURSE_COLS.esFijo]: course.esFijo,
+          [COURSE_COLS.isExercise]: course.isExercise,
+          [COURSE_COLS.emoji]: course.emoji,
+          [COURSE_COLS.checklist]: course.checklist,
+          [COURSE_COLS.customColor]: course.customColor || null,
+          [COURSE_COLS.updatedAt]: new Date().toISOString(),
         }).select('id').single();
 
         if (error) throw error;
-        courseId = data.id;
+        courseId = data[COURSE_COLS.id];
       }
 
-      const { error: checklistError } = await supabase.from('course_checklists').upsert({
-        user_key: COURSE_USER_KEY,
-        course_id: courseId,
-        course_code: course.courseCode,
-        items: course.checklist,
-        completed: course.completed,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_key,course_id' });
+      const { error: checklistError } = await supabase.from(COURSE_TABLES.courseChecklists).upsert({
+        [COURSE_COLS.userKey]: COURSE_USER_KEY,
+        [COURSE_COLS.courseId]: courseId,
+        [COURSE_COLS.courseCode]: course.courseCode,
+        [COURSE_COLS.items]: course.checklist,
+        [COURSE_COLS.completed]: course.completed,
+        [COURSE_COLS.updatedAt]: new Date().toISOString(),
+      }, { onConflict: `${COURSE_COLS.userKey},${COURSE_COLS.courseId}` });
 
       if (checklistError) throw checklistError;
     }
@@ -502,10 +528,10 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
 
   try {
     const { data: fixedCourses, error: fixedCourseError } = await supabase
-      .from('fixed_courses')
-      .select('id')
-      .eq('user_key', COURSE_USER_KEY)
-      .eq('course_code', courseCode)
+      .from(COURSE_TABLES.fixedCourses)
+      .select(COURSE_COLS.id)
+      .eq(COURSE_COLS.userKey, COURSE_USER_KEY)
+      .eq(COURSE_COLS.courseCode, courseCode)
       .order('updated_at', { ascending: false })
       .limit(1);
 
@@ -513,18 +539,18 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
 
     const fixedCourse = Array.isArray(fixedCourses) ? fixedCourses[0] : null;
 
-    if (!fixedCourse?.id) {
+    if (!fixedCourse?.[COURSE_COLS.id]) {
       throw new Error(`Course not found: ${courseCode}`);
     }
 
-    const { error } = await supabase.from('course_checklists').upsert({
-      user_key: COURSE_USER_KEY,
-      course_id: fixedCourse.id,
-      course_code: courseCode,
-      items,
-      completed,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_key,course_id' });
+    const { error } = await supabase.from(COURSE_TABLES.courseChecklists).upsert({
+      [COURSE_COLS.userKey]: COURSE_USER_KEY,
+      [COURSE_COLS.courseId]: fixedCourse[COURSE_COLS.id],
+      [COURSE_COLS.courseCode]: courseCode,
+      [COURSE_COLS.items]: items,
+      [COURSE_COLS.completed]: completed,
+      [COURSE_COLS.updatedAt]: new Date().toISOString(),
+    }, { onConflict: `${COURSE_COLS.userKey},${COURSE_COLS.courseId}` });
 
     if (error) throw error;
   } catch (error) {
@@ -700,27 +726,273 @@ export async function saveSubscriptionToSupabase(
           user_key: userKey,
           subscription: normalizedSubscription,
           timezone,
-          notification_hour_start: 7,
-          notification_hour_end: 21,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_key' }
       );
 
-    if (error) {
-      console.error('[✗] Error upserting subscription to Supabase:', error);
-      throw error;
-    }
-
-    console.log(`[✓] Push subscription saved to Supabase for user: ${userKey}`);
+    if (error) throw error;
+    console.log(`[✓] Subscription saved to Supabase for user: ${userKey}`);
   } catch (error) {
-    if (isMissingSchemaError(error)) {
-      console.warn('[⚠] Supabase schema missing, falling back to local storage');
-      saveSubscriptionToSupabase(userKey, subscription, timezone);
-      return;
-    }
-    console.error('[✗] Failed to save subscription:', error);
+    console.error('Error saving subscription to Supabase:', error);
     throw error;
+  }
+}
+
+// === BLOQUE 2: User Data Tables Functions ===
+
+const USER_TABLES = {
+  schedules: 'user_schedules',
+  settings: 'user_settings',
+  exceptions: 'user_exceptions',
+} as const;
+
+const USER_COLS = {
+  userId: 'user_id',
+  schedule: 'schedule',
+  timezone: 'timezone',
+  notificationHourStart: 'notification_hour_start',
+  notificationHourEnd: 'notification_hour_end',
+  onboardingCompleted: 'onboarding_completed',
+  userName: 'user_name',
+  updatedAt: 'updated_at',
+  weekKey: 'week_key',
+  activityId: 'activity_id',
+  modifiedData: 'modified_data',
+} as const;
+
+/**
+ * Load user schedule from Supabase
+ */
+export async function loadUserSchedule(userId: string): Promise<DaySchedule[] | null> {
+  if (!USE_SUPABASE || !supabase) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from(USER_TABLES.schedules)
+      .select(USER_COLS.schedule)
+      .eq(USER_COLS.userId, userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // 116 = no rows found
+    return data?.[USER_COLS.schedule] || null;
+  } catch (error) {
+    console.error('Error loading user schedule:', error);
+    return null;
+  }
+}
+
+/**
+ * Save user schedule to Supabase
+ */
+export async function saveUserSchedule(userId: string, schedule: DaySchedule[], timezone: string = 'America/Lima'): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from(USER_TABLES.schedules)
+      .upsert(
+        {
+          [USER_COLS.userId]: userId,
+          [USER_COLS.schedule]: schedule,
+          [USER_COLS.timezone]: timezone,
+          [USER_COLS.updatedAt]: new Date().toISOString(),
+        },
+        { onConflict: USER_COLS.userId }
+      );
+
+    if (error) throw error;
+    console.log(`[✓] User schedule saved for user: ${userId}`);
+  } catch (error) {
+    console.error('Error saving user schedule:', error);
+  }
+}
+
+/**
+ * Load completion history for a specific date
+ */
+export async function loadUserCompletions(userId: string, date: string): Promise<Record<string, boolean>> {
+  if (!USE_SUPABASE || !supabase) {
+    return {};
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_completions')
+      .select('completed_ids')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.completed_ids || {};
+  } catch (error) {
+    console.error('Error loading user completions:', error);
+    return {};
+  }
+}
+
+/**
+ * Save completion history for a date
+ */
+export async function saveUserCompletions(userId: string, date: string, completedIds: Record<string, boolean>): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('user_completions')
+      .upsert(
+        {
+          user_id: userId,
+          date,
+          completed_ids: completedIds,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,date' }
+      );
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving user completions:', error);
+  }
+}
+
+/**
+ * Load weekly exceptions for an activity
+ */
+export async function loadUserException(userId: string, weekKey: string, activityId: string): Promise<any | null> {
+  if (!USE_SUPABASE || !supabase) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from(USER_TABLES.exceptions)
+      .select(USER_COLS.modifiedData)
+      .eq(USER_COLS.userId, userId)
+      .eq(USER_COLS.weekKey, weekKey)
+      .eq(USER_COLS.activityId, activityId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.[USER_COLS.modifiedData] || null;
+  } catch (error) {
+    console.error('Error loading user exception:', error);
+    return null;
+  }
+}
+
+/**
+ * Save weekly exception for an activity
+ */
+export async function saveUserException(userId: string, weekKey: string, activityId: string, modifiedData: any): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from(USER_TABLES.exceptions)
+      .upsert(
+        {
+          [USER_COLS.userId]: userId,
+          [USER_COLS.weekKey]: weekKey,
+          [USER_COLS.activityId]: activityId,
+          [USER_COLS.modifiedData]: modifiedData,
+          [USER_COLS.updatedAt]: new Date().toISOString(),
+        },
+        { onConflict: `${USER_COLS.userId},${USER_COLS.weekKey},${USER_COLS.activityId}` }
+      );
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving user exception:', error);
+  }
+}
+
+/**
+ * Delete expired weekly exceptions (older than current week)
+ */
+export async function deleteExpiredExceptions(userId: string, currentWeekKey: string): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from(USER_TABLES.exceptions)
+      .delete()
+      .eq(USER_COLS.userId, userId)
+      .lt(USER_COLS.weekKey, currentWeekKey);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting expired exceptions:', error);
+  }
+}
+
+/**
+ * Load user settings
+ */
+export async function loadUserSettings(userId: string): Promise<any | null> {
+  if (!USE_SUPABASE || !supabase) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from(USER_TABLES.settings)
+      .select('*')
+      .eq(USER_COLS.userId, userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!data) return null;
+
+    return {
+      notification_hour_start: data[USER_COLS.notificationHourStart],
+      notification_hour_end: data[USER_COLS.notificationHourEnd],
+      onboarding_completed: data[USER_COLS.onboardingCompleted],
+      user_name: data[USER_COLS.userName],
+    };
+  } catch (error) {
+    console.error('Error loading user settings:', error);
+    return null;
+  }
+}
+
+/**
+ * Save user settings
+ */
+export async function saveUserSettings(userId: string, settings: any): Promise<void> {
+  if (!USE_SUPABASE || !supabase) {
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from(USER_TABLES.settings)
+      .upsert(
+        {
+          [USER_COLS.userId]: userId,
+          [USER_COLS.updatedAt]: new Date().toISOString(),
+          ...(settings.notification_hour_start !== undefined ? { [USER_COLS.notificationHourStart]: settings.notification_hour_start } : {}),
+          ...(settings.notification_hour_end !== undefined ? { [USER_COLS.notificationHourEnd]: settings.notification_hour_end } : {}),
+          ...(settings.onboarding_completed !== undefined ? { [USER_COLS.onboardingCompleted]: settings.onboarding_completed } : {}),
+          ...(settings.user_name !== undefined ? { [USER_COLS.userName]: settings.user_name } : {}),
+        },
+        { onConflict: USER_COLS.userId }
+      );
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving user settings:', error);
   }
 }
 

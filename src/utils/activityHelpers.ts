@@ -3,16 +3,19 @@
  * Implements smart expiry for fixed activities and visual distinction
  */
 
-import { Activity, Category } from '../constants';
+import { Activity, Category, ActivityType } from '../constants';
 
 /**
  * Determines if a fixed activity should be hidden based on current time
  * Fixed activities (meals, routines) auto-hide after their endTime
- * Non-fixed activities (tasks, projects) persist until manually completed
+ * FLEXIBLE activities never auto-hide by expiry - only by manual completion
  * Only applies to the schedule for the current real-world day.
  */
 export const shouldHideFixedActivity = (activity: Activity, currentTime: Date, isCurrentDay = true): boolean => {
   if (!isCurrentDay) return false;
+
+  // FLEXIBLE activities never auto-hide by expiry
+  if (activity.activityType === ActivityType.FLEXIBLE) return false;
 
   // Only hide if it's marked as fixed
   const isFixed = activity.isFixed || activity.esFijo;

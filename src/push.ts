@@ -25,13 +25,6 @@ async function getApiBaseUrl() {
   const configured = env.VITE_API_BASE_URL || '';
   if (configured) return configured;
 
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:8787';
-    }
-  }
-
   return 'https://horarioapp-ows5.onrender.com';
 }
 
@@ -77,6 +70,7 @@ export async function syncSubscriptionToBackend(payload: {
   subscription: PushSubscription;
   timezone: string;
   schedule: unknown;
+  userId?: string;
 }) {
   const baseUrl = await getApiBaseUrl();
   
@@ -98,6 +92,7 @@ export async function syncSubscriptionToBackend(payload: {
     },
     timezone: payload.timezone,
     schedule: payload.schedule,
+    userId: payload.userId,
   };
 
   const res = await fetch(`${baseUrl}/api/push/subscribe`, {
@@ -116,12 +111,12 @@ export async function syncSubscriptionToBackend(payload: {
   console.log('[Push] Subscription registered:', result.message);
 }
 
-export async function syncNotificationHours(notificationHourStart: number, notificationHourEnd: number) {
+export async function syncNotificationHours(notificationHourStart: number, notificationHourEnd: number, userId?: string) {
   const baseUrl = await getApiBaseUrl();
   const res = await fetch(`${baseUrl}/api/push/notification-hours`, {
     method: 'POST',
     headers: await buildHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ notificationHourStart, notificationHourEnd }),
+    body: JSON.stringify({ notificationHourStart, notificationHourEnd, userId }),
   });
 
   if (!res.ok) {
@@ -129,7 +124,7 @@ export async function syncNotificationHours(notificationHourStart: number, notif
   }
 }
 
-export async function syncScheduleToBackend(payload: { timezone: string; schedule: unknown }) {
+export async function syncScheduleToBackend(payload: { timezone: string; schedule: unknown; userId?: string }) {
   const baseUrl = await getApiBaseUrl();
   await fetch(`${baseUrl}/api/push/schedule`, {
     method: 'POST',
@@ -138,15 +133,16 @@ export async function syncScheduleToBackend(payload: { timezone: string; schedul
   });
 }
 
-export async function scheduleNewNotification(payload: { timezone: string; schedule: unknown }) {
+export async function scheduleNewNotification(payload: { timezone: string; schedule: unknown; userId?: string }) {
   return syncScheduleToBackend(payload);
 }
 
-export async function sendTestPush() {
+export async function sendTestPush(userId?: string) {
   const baseUrl = await getApiBaseUrl();
   const res = await fetch(`${baseUrl}/api/push/test`, {
     method: 'POST',
-    headers: await buildHeaders(),
+    headers: await buildHeaders({ 'Content-Type': 'application/json' }),
+    body: userId ? JSON.stringify({ userId }) : undefined,
   });
   if (!res.ok) {
     throw new Error('No se pudo enviar la notificacion de prueba.');

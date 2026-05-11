@@ -115,10 +115,11 @@ app.post('/api/push/subscribe', async (req, res) => {
     return;
   }
 
-  const { subscription, timezone, schedule } = req.body as {
+  const { subscription, timezone, schedule, userId } = req.body as {
     subscription?: PushSubscriptionPayload;
     timezone?: string;
     schedule?: DaySchedule[];
+    userId?: string;
   };
 
   if (!subscription || !subscription.endpoint) {
@@ -127,11 +128,11 @@ app.post('/api/push/subscribe', async (req, res) => {
   }
 
   try {
-    // Save to Supabase using the new function
-    const userKey = COURSE_USER_KEY;
+    // Use userId if provided, otherwise fall back to COURSE_USER_KEY for backward compatibility
+    const userKey = userId || COURSE_USER_KEY;
     await saveSubscriptionToSupabase(userKey, subscription, timezone || 'America/Santo_Domingo');
     
-    // Also update local config for immediate availability
+    // Also update local config for immediate availability (backward compatibility)
     const config = await loadConfig();
     config.subscription = subscription;
     config.timezone = timezone || config.timezone || 'America/Santo_Domingo';
@@ -157,9 +158,10 @@ app.post('/api/push/schedule', async (req, res) => {
     return;
   }
 
-  const { schedule, timezone } = req.body as {
+  const { schedule, timezone, userId } = req.body as {
     schedule?: DaySchedule[];
     timezone?: string;
+    userId?: string;
   };
 
   if (!Array.isArray(schedule)) {
@@ -181,10 +183,12 @@ app.post('/api/push/schedule', async (req, res) => {
   }
 });
 
-app.post('/api/push/test', async (_req, res) => {
-  if (!requirePushToken(_req, res)) {
+app.post('/api/push/test', async (req, res) => {
+  if (!requirePushToken(req, res)) {
     return;
   }
+
+  const { userId } = req.body as { userId?: string };
 
   try {
     const config = await loadConfig();
@@ -195,7 +199,7 @@ app.post('/api/push/test', async (_req, res) => {
     }
 
     await sendPush(subscription, 'Mya Dynamics', 'Notificacion de prueba enviada desde backend.');
-    res.json({ ok: true });
+    res.json({ ok: true, userId: userId || 'anonymous' });
   } catch (error) {
     console.error('Error sending test push:', error);
     res.status(500).json({ ok: false, error: 'Failed to send push' });
@@ -207,9 +211,10 @@ app.post('/api/push/notification-hours', async (req, res) => {
     return;
   }
 
-  const { notificationHourStart, notificationHourEnd } = req.body as {
+  const { notificationHourStart, notificationHourEnd, userId } = req.body as {
     notificationHourStart?: number;
     notificationHourEnd?: number;
+    userId?: string;
   };
 
   if (notificationHourStart === undefined || notificationHourEnd === undefined) {

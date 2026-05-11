@@ -1,9 +1,9 @@
 self.addEventListener('install', () => {
-  self.skipWaiting();
+  // Keep the existing worker until the browser naturally activates the update.
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.resolve());
 });
 
 /**

@@ -37,6 +37,7 @@ import {
   DaySchedule, 
   Activity, 
   Category, 
+  ActivityType,
   OPTIONS_CATALOG 
 } from './constants';
 import {
@@ -61,6 +62,18 @@ import {
   getActivityStatus,
   shouldDimActivity,
 } from './utils/activityHelpers';
+import { onAuthStateChange, signOut, User as SupabaseUser } from './services/supabaseAuth';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { Onboarding } from './components/Onboarding';
+import {
+  loadUserScheduleFromSupabase,
+  saveUserScheduleToSupabase,
+  loadUserSettingsFromSupabase,
+  saveUserSettingsToSupabase,
+  saveUserExceptionToSupabase,
+  loadUserExceptionsForWeek,
+  applyWeeklyExceptionsToSchedule,
+} from './services/userDataService';
 
 type DrawerView = 'horario' | 'mis-cursos';
 
@@ -138,6 +151,7 @@ export default function App() {
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [pushConfigured, setPushConfigured] = useState(false);
+  const [pushActivo, setPushActivo] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [notificationHourStart, setNotificationHourStart] = useState(7);
   const [notificationHourEnd, setNotificationHourEnd] = useState(22);
@@ -149,13 +163,21 @@ export default function App() {
   const [newCourseTask, setNewCourseTask] = useState('');
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
-  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
+  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE });
   const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43', '#ffffff'];
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; suggestionStart: string; suggestionEnd: string; start: string; end: string } | null>(null);
   const [checklistText, setChecklistText] = useState('');
+  const [adjustableActivityModal, setAdjustableActivityModal] = useState<{ activityType: string; activityName: string } | null>(null);
+  const [adjustableActivityDecision, setAdjustableActivityDecision] = useState<{ thisWeekOnly: boolean; activityId: string } | null>(null);
+  
+  // --- AUTH STATE ---
+  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [isLoadingUserData, setIsLoadingUserData] = useState(false);
 
   const parseMinutes = (value: string) => {
     const [hours, minutes] = value.split(':').map(Number);
@@ -253,15 +275,30 @@ export default function App() {
     return bestGap ? `${formatMinutes(bestGap.start)} - ${formatMinutes(bestGap.end)}` : '05:00 - 22:00';
   };
 
-  const detectConflict = (dayIndex: number, start: string, end: string, currentId?: string) => {
+  const detectConflict = (
+    dayIndex: number,
+    start: string,
+    end: string,
+    currentId?: string,
+    newActivityType?: ActivityType
+  ) => {
+    // If the new activity is FLEXIBLE, do not treat it as a conflict
+    if (newActivityType === ActivityType.FLEXIBLE) return null;
+
     const newStart = parseMinutes(start);
     const newEnd = parseMinutes(end);
-    return schedule[dayIndex].activities.find(activity => {
-      if (activity.id === currentId || isActivityArchived(activity.id)) return false;
-      const existingStart = parseMinutes(activity.startTime);
-      const existingEnd = parseMinutes(activity.endTime);
-      return newStart < existingEnd && newEnd > existingStart;
-    }) || null;
+    return (
+      schedule[dayIndex].activities.find(activity => {
+        if (activity.id === currentId || isActivityArchived(activity.id)) return false;
+
+        // Ignore existing FLEXIBLE activities when detecting conflicts
+        if (activity.activityType === ActivityType.FLEXIBLE) return false;
+
+        const existingStart = parseMinutes(activity.startTime);
+        const existingEnd = parseMinutes(activity.endTime);
+        return newStart < existingEnd && newEnd > existingStart;
+      }) || null
+    );
   };
 
   const courseCards = useMemo<CourseCard[]>(() => {
@@ -332,6 +369,60 @@ export default function App() {
   };
 
   // --- PERSISTENCE ---
+  // --- AUTH INITIALIZATION ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const unsubscribe = onAuthStateChange(async (user) => {
+          setCurrentUser(user);
+
+          // Load user data from Supabase
+          if (user) {
+            setIsLoadingUserData(true);
+            try {
+              const userSettings = await loadUserSettingsFromSupabase(user.id);
+              const userSchedule = await loadUserScheduleFromSupabase(user.id);
+
+              // Local fallback: if backend missing the flag, allow a persisted local value
+              const localOnboardingFlag = typeof window !== 'undefined' && localStorage.getItem('mya_onboarding_completed') === '1';
+
+              // Check if user needs onboarding. If either backend says completed or local flag exists, skip onboarding.
+              const needsOnboarding = !(userSettings?.onboarding_completed || localOnboardingFlag);
+
+              if (needsOnboarding) {
+                setShowOnboarding(true);
+              } else if (userSchedule) {
+                // Load user's schedule from Supabase and apply weekly exceptions
+                const weekKey = `${new Date().getFullYear()}-${String(Math.floor((new Date().getTime() - new Date(new Date().getFullYear(), 0, 4).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1).padStart(2, '0')}`;
+                const scheduleWithExceptions = await applyWeeklyExceptionsToSchedule(user.id, userSchedule, weekKey);
+                setSchedule(scheduleWithExceptions);
+              }
+            } catch (error) {
+              console.error('Error loading user data:', error);
+            } finally {
+              setIsLoadingUserData(false);
+            }
+          }
+
+          setIsAuthLoading(false);
+        });
+        return unsubscribe;
+      } catch (error) {
+        console.error('Auth error:', error);
+        setIsAuthLoading(false);
+      }
+    };
+
+    let unsubscribe: any;
+    initAuth().then((unsub) => {
+      unsubscribe = unsub;
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('mya_dynamics_schedule', JSON.stringify(schedule));
     localStorage.setItem('mya_dynamics_completed', JSON.stringify(completedToday));
@@ -339,17 +430,52 @@ export default function App() {
     localStorage.setItem('mya_dynamics_silenced', JSON.stringify(silencedNotifications));
     localStorage.setItem('mya_dynamics_last_date', todayStr);
 
-    // Debounced sync to backend (supabase via server) when schedule changes
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      if (cancelled) return;
-      syncScheduleToBackend({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, schedule }).catch(() => {
-        // Don't block UI on backend failures
-      });
-    }, 800);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const baseUrl = 'https://horarioapp-ows5.onrender.com';
+        await fetch(`${baseUrl}/api/push/schedule`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-mya-push-token': 'mya_2026_9fJ2kL8pQw7xZr4nT6yV3bH1',
+          },
+          body: JSON.stringify({
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            schedule,
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        // Silently fail, no retry
+      }
+    }, 3000);
 
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [schedule, completedToday, firedNotifications, silencedNotifications, todayStr]);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [schedule]);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker?.ready) return;
+
+    let cancelled = false;
+    navigator.serviceWorker.ready.then(async (reg) => {
+      if (cancelled) return;
+      const sub = await reg.pushManager.getSubscription();
+      if (cancelled) return;
+      const active = !!sub?.endpoint;
+      setPushActivo(active);
+      if (active) setPushConfigured(true);
+    }).catch(() => {
+      if (!cancelled) setPushActivo(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // --- CLOCK & TIMERS ---
   useEffect(() => {
@@ -362,16 +488,20 @@ export default function App() {
   }, [currentTime]);
 
   useEffect(() => {
-    registerServiceWorker().catch(() => {
-      // Silent fail: app still works with local notifications.
-    });
+    if ((import.meta as ImportMeta & { env?: any }).env && (import.meta as ImportMeta & { env?: any }).env.PROD) {
+      registerServiceWorker().catch(() => {
+        // Silent fail: app still works with local notifications.
+      });
+    }
   }, []);
 
   // Setup Service Worker message listener for sound notifications
   useEffect(() => {
-    setupServiceWorkerMessageListener(({ soundTag, isExercise }) => {
-      playNotificationSound(soundTag, isExercise);
-    });
+    if ((import.meta as ImportMeta & { env?: any }).env && (import.meta as ImportMeta & { env?: any }).env.PROD) {
+      setupServiceWorkerMessageListener(({ soundTag, isExercise }) => {
+        playNotificationSound(soundTag, isExercise);
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -469,7 +599,7 @@ export default function App() {
   }, [schedule]);
 
   useEffect(() => {
-    syncNotificationHours(notificationHourStart, notificationHourEnd).catch(() => {
+    syncNotificationHours(notificationHourStart, notificationHourEnd, currentUser?.id).catch(() => {
       // Keep app usable even if backend is temporarily unavailable.
     });
   }, [notificationHourStart, notificationHourEnd]);
@@ -599,10 +729,12 @@ export default function App() {
         subscription,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         schedule,
+        userId: currentUser?.id,
       });
 
       setNotificationsEnabled(true);
       setPushConfigured(true);
+      setPushActivo(true);
       setNotification({ title: '🔔 Push Activado', message: 'Notificaciones activas incluso con la app cerrada.', type: 'success' });
       setTimeout(() => setNotification(null), 3500);
     } catch (error) {
@@ -610,6 +742,7 @@ export default function App() {
       setPushError(msg);
       setNotificationsEnabled(false);
       setPushConfigured(false);
+      setPushActivo(false);
       setNotification({ title: '❌ Error de Push', message: msg, type: 'error' });
       setTimeout(() => setNotification(null), 4500);
     }
@@ -617,12 +750,37 @@ export default function App() {
 
   const handleSendTestPush = async () => {
     try {
-      await sendTestPush();
+      await sendTestPush(currentUser?.id);
       setNotification({ title: '📨 Prueba Enviada', message: 'Revisa la notificación en tu teléfono.', type: 'info' });
       setTimeout(() => setNotification(null), 3000);
     } catch {
       setNotification({ title: '⚠️ Backend Offline', message: 'No se pudo enviar la prueba de notificación.', type: 'error' });
       setTimeout(() => setNotification(null), 3500);
+    }
+  };
+
+  // Helper: Generate week key in YYYY-WW format
+  const getWeekKey = (date: Date = new Date()): string => {
+    const year = date.getFullYear();
+    const jan4 = new Date(year, 0, 4);
+    const monday = new Date(jan4);
+    monday.setDate(monday.getDate() - monday.getDay() + 1);
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - date.getDay() + 1);
+    const diff = weekStart.getTime() - monday.getTime();
+    const week = Math.floor(diff / (7 * 24 * 60 * 60 * 1000)) + 1;
+    return `${year}-${String(week).padStart(2, '0')}`;
+  };
+
+  // Helper: Save weekly exception for FIJA_AJUSTABLE activities
+  const saveWeeklyException = async (activityId: string, modifiedData: any) => {
+    if (!currentUser) return;
+    try {
+      const weekKey = getWeekKey();
+      await saveUserExceptionToSupabase(currentUser.id, weekKey, activityId, modifiedData);
+      console.log('[Exception] Guardada para semana', weekKey);
+    } catch (error) {
+      console.error('Error saving weekly exception:', error);
     }
   };
 
@@ -637,6 +795,22 @@ export default function App() {
       .map(item => item.trim())
       .filter(Boolean);
 
+    // Check if we're editing a FIJA_AJUSTABLE activity
+    if (showEditor?.mode === 'edit' && showEditor.activityId) {
+      const currentActivity = schedule[activeDayIndex].activities.find(a => a.id === showEditor.activityId);
+      if (currentActivity?.activityType === ActivityType.FIJA_AJUSTABLE) {
+        // Check if time changed and if we haven't already made a decision
+        if ((currentActivity.startTime !== start || currentActivity.endTime !== end) && !adjustableActivityDecision) {
+          // Show modal for weekly exception
+          setAdjustableActivityModal({
+            activityType: ActivityType.FIJA_AJUSTABLE,
+            activityName: name,
+          });
+          return;
+        }
+      }
+    }
+
     // In edit mode, only check conflict if the time actually changed
     let shouldCheckConflict = true;
     if (showEditor?.mode === 'edit' && showEditor.activityId) {
@@ -646,7 +820,15 @@ export default function App() {
       }
     }
 
-    const conflict = shouldCheckConflict ? detectConflict(activeDayIndex, start, end, showEditor?.mode === 'edit' ? showEditor.activityId : undefined) : null;
+    const conflict = shouldCheckConflict
+      ? detectConflict(
+          activeDayIndex,
+          start,
+          end,
+          showEditor?.mode === 'edit' ? showEditor.activityId : undefined,
+          editorData.activityType
+        )
+      : null;
     if (conflict) {
       const duration = parseMinutes(end) - parseMinutes(start);
       const suggestion = getNearestFreeBlock(activeDayIndex, duration, parseMinutes(start), showEditor?.activityId);
@@ -670,7 +852,18 @@ export default function App() {
       if (showEditor?.mode === 'edit' && showEditor.activityId) {
         activities = activities.map(a => 
           a.id === showEditor.activityId 
-            ? { ...a, name: name.trim(), startTime: start, endTime: end, emoji, checklist, courseId: a.courseId || a.id, isCourseMarked, customColor: isValidHex(customColor) ? customColor : a.customColor } 
+            ? { 
+                ...a, 
+                name: name.trim(), 
+                startTime: start, 
+                endTime: end, 
+                emoji, 
+                checklist, 
+                courseId: a.courseId || a.id, 
+                isCourseMarked, 
+                customColor: isValidHex(customColor) ? customColor : a.customColor,
+                activityType: editorData.activityType // Use the updated activity type from editor
+              } 
             : a
         );
       } else {
@@ -683,8 +876,9 @@ export default function App() {
           emoji,
           courseId: `manual-${Date.now()}`,
           checklist,
-              isCourseMarked,
-              customColor: chosenColor,
+          isCourseMarked,
+          customColor: chosenColor,
+          activityType: ActivityType.FLEXIBLE, // New activities default to FLEXIBLE
         };
         activities.push(newAct);
       }
@@ -699,25 +893,60 @@ export default function App() {
       message: `${name} guardado.`,
       type: 'success'
     });
+    
+    // Handle weekly exceptions for FIJA_AJUSTABLE activities
+    if (adjustableActivityDecision?.thisWeekOnly && currentUser) {
+      const modifiedData = {
+        startTime: start,
+        endTime: end,
+        name: name.trim(),
+        emoji,
+      };
+      saveWeeklyException(adjustableActivityDecision.activityId, modifiedData);
+      setNotification({
+        title: '📅 Solo esta semana',
+        message: `${name} cambió solo para esta semana.`,
+        type: 'info'
+      });
+    } else if (adjustableActivityDecision) {
+      setNotification({
+        title: '✅ Cambio permanente',
+        message: `${name} cambió permanentemente.`,
+        type: 'success'
+      });
+    }
+    
     setShowEditor(null);
-    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '' });
+    setAdjustableActivityDecision(null);
+    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE });
     setTimeout(() => setNotification(null), 3000);
   };
 
   const openEditor = (mode: 'add' | 'edit', activity?: Activity) => {
     if (mode === 'edit' && activity) {
+      // Check if activity is FIJA_PERMANENTE - restrict editing time
+      if (activity.activityType === ActivityType.FIJA_PERMANENTE) {
+        setNotification({
+          title: '🔒 No editable',
+          message: 'Este es un curso fijo. Solo puedes marcarlo como completado.',
+          type: 'info',
+        });
+        return;
+      }
+
       setEditorData({
         name: activity.name,
         start: activity.startTime,
         end: activity.endTime,
         emoji: activity.emoji || '📍',
         isCourseMarked: activity.isCourseMarked || false,
-        customColor: activity.customColor || ''
+        customColor: activity.customColor || '',
+        activityType: activity.activityType || ActivityType.FLEXIBLE
       });
       setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
-      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE[0] });
+      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE[0], activityType: ActivityType.FLEXIBLE });
       setChecklistText('');
       setShowEditor({ mode: 'add' });
     }
@@ -764,6 +993,81 @@ export default function App() {
       default: return 'bg-slate-50 border-slate-200 text-slate-700';
     }
   };
+
+  const handleOnboardingComplete = async (onboardedSchedule: DaySchedule[]) => {
+    if (!currentUser) return;
+
+    try {
+      // Save schedule and onboarding state without blocking the UI flow.
+      const results = await Promise.allSettled([
+        saveUserScheduleToSupabase(currentUser.id, onboardedSchedule),
+        saveUserSettingsToSupabase(currentUser.id, {
+          onboarding_completed: true,
+          user_name: currentUser.name,
+          notification_hour_start: 7,
+          notification_hour_end: 22,
+        }),
+      ]);
+
+      const hasSyncError = results.some((result) => result.status === 'rejected');
+
+      // Update local state even if Supabase is temporarily unavailable.
+      setSchedule(onboardedSchedule);
+      setShowOnboarding(false);
+
+      if (hasSyncError) {
+        setNotification({
+          title: '⚠️ Guardado local',
+          message: 'Tu horario ya está listo. La sincronización con la nube quedará pendiente.',
+          type: 'info',
+        });
+        setTimeout(() => setNotification(null), 4500);
+      }
+      // Persist local onboarding completed flag so reloads don't force onboarding
+      try {
+        if (typeof window !== 'undefined') localStorage.setItem('mya_onboarding_completed', '1');
+      } catch (e) {
+        // ignore
+      }
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      setSchedule(onboardedSchedule);
+      setShowOnboarding(false);
+      setNotification({
+        title: '⚠️ Guardado local',
+        message: 'Tu horario se aplicó en la app, pero hubo un problema al sincronizarlo.',
+        type: 'info',
+      });
+      try {
+        if (typeof window !== 'undefined') localStorage.setItem('mya_onboarding_completed', '1');
+      } catch (e) {}
+      setTimeout(() => setNotification(null), 4500);
+    }
+  };
+
+  // Show loading or welcome screen if not authenticated
+  if (isAuthLoading) {
+    return <WelcomeScreen isLoading={true} />;
+  }
+
+  if (!currentUser) {
+    return <WelcomeScreen isLoading={false} />;
+  }
+
+  // Show onboarding only when flag set and user data has finished loading.
+  if (isLoadingUserData) {
+    // While user data loads, show a loading state to avoid flashing the onboarding UI.
+    return <WelcomeScreen isLoading={true} />;
+  }
+
+  if (showOnboarding) {
+    return (
+      <Onboarding
+        userName={currentUser.name}
+        onComplete={handleOnboardingComplete}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen font-sans p-4 pb-24 md:p-8 selection:bg-rose-100 safe-top">
@@ -828,11 +1132,51 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="mt-6 rounded-3xl border-2 border-indigo-200 bg-white/80 p-4">
+              <div className="mt-6 rounded-3xl border-2 border-indigo-200 bg-white p-4">
                 <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-black">Estado</p>
                 <p className="mt-2 text-sm font-bold text-indigo-950">{courseSyncStatus === 'syncing' ? 'Sincronizando cursos' : courseSyncStatus === 'error' ? 'Sincronización con errores' : 'Listo para trabajar'}</p>
                 <p className="mt-1 text-xs text-slate-500">Horario fijo, cursos y checklist quedan persistidos.</p>
               </div>
+
+              {/* User Section */}
+              {currentUser && (
+                <div className="mt-6 pt-6 border-t-2 border-slate-200 space-y-3">
+                  <div className="flex items-center gap-3 px-3 py-2">
+                    {currentUser.avatar_url ? (
+                      <img 
+                        src={currentUser.avatar_url} 
+                        alt={currentUser.name}
+                        className="w-10 h-10 rounded-full border-2 border-indigo-900"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full border-2 border-indigo-900 bg-indigo-100 flex items-center justify-center text-indigo-900 font-bold">
+                        {currentUser.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-indigo-950 truncate">{currentUser.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await signOut();
+                        // Clear local onboarding marker to avoid carrying it across accounts
+                        try { if (typeof window !== 'undefined') localStorage.removeItem('mya_onboarding_completed'); } catch (e) {}
+                        setCurrentUser(null);
+                        setDrawerOpen(false);
+                      } catch (error) {
+                        console.error('Sign out error:', error);
+                      }
+                    }}
+                    className="w-full rounded-2xl border-2 border-red-500 bg-red-50 text-red-700 p-3 flex items-center justify-center gap-2 font-bold hover:bg-red-100 transition"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>Cerrar sesión</span>
+                  </button>
+                </div>
+              )}
             </motion.aside>
           </motion.div>
         )}
@@ -853,6 +1197,7 @@ export default function App() {
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 highlighter-yellow">{schedule[activeDayIndex].day}</span>
                   <span className="text-[10px] font-black uppercase tracking-widest text-rose-500 font-mono">{timeStr}</span>
+                  {currentUser && <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 ml-auto">👋 {currentUser.name.split(' ')[0]}</span>}
                 </div>
               </div>
             </div>
@@ -924,12 +1269,12 @@ export default function App() {
 
           <div className="mt-6 flex items-center justify-between gap-3 relative z-10">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              {pushConfigured ? 'Push backend: activo' : 'Push backend: pendiente'}
+              {pushActivo ? 'Push backend: activo' : 'Push backend: pendiente'}
             </span>
             <button
               onClick={handleSendTestPush}
               className="px-3 py-2 text-xs border-2 border-indigo-900 bg-white text-indigo-900 rounded-xl font-bold disabled:opacity-50"
-              disabled={!pushConfigured}
+              disabled={!pushActivo}
             >
               Probar push
             </button>
@@ -1265,6 +1610,51 @@ export default function App() {
                       🎓 Marcar como curso
                     </label>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Actividad</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => setEditorData(prev => ({ ...prev, activityType: ActivityType.FIJA_PERMANENTE }))}
+                        className={`py-3 px-2 rounded-lg border-2 font-bold text-sm flex flex-col items-center gap-1 transition ${
+                          editorData.activityType === ActivityType.FIJA_PERMANENTE
+                            ? 'bg-slate-200 border-slate-600'
+                            : 'bg-white border-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        <span className="text-xl">🔒</span>
+                        <span className="text-[9px]">Fija</span>
+                      </button>
+                      <button
+                        onClick={() => setEditorData(prev => ({ ...prev, activityType: ActivityType.FIJA_AJUSTABLE }))}
+                        className={`py-3 px-2 rounded-lg border-2 font-bold text-sm flex flex-col items-center gap-1 transition ${
+                          editorData.activityType === ActivityType.FIJA_AJUSTABLE
+                            ? 'bg-amber-200 border-amber-600'
+                            : 'bg-white border-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        <span className="text-xl">🔓</span>
+                        <span className="text-[9px]">Ajustable</span>
+                      </button>
+                      <button
+                        onClick={() => setEditorData(prev => ({ ...prev, activityType: ActivityType.FLEXIBLE }))}
+                        className={`py-3 px-2 rounded-lg border-2 font-bold text-sm flex flex-col items-center gap-1 transition ${
+                          editorData.activityType === ActivityType.FLEXIBLE
+                            ? 'bg-sky-200 border-sky-600'
+                            : 'bg-white border-slate-200 hover:border-slate-400'
+                        }`}
+                      >
+                        <span className="text-xl">✏️</span>
+                        <span className="text-[9px]">Flexible</span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 px-2">
+                      {editorData.activityType === ActivityType.FIJA_PERMANENTE && '🔒 No se puede editar hora'}
+                      {editorData.activityType === ActivityType.FIJA_AJUSTABLE && '🔓 Permite cambios semanales'}
+                      {editorData.activityType === ActivityType.FLEXIBLE && '✏️ Editable sin restricciones'}
+                    </p>
+                  </div>
+
                   <div className="mt-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Color personalizado</label>
                     <div className="mt-2 flex items-center gap-3">
@@ -1458,8 +1848,14 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => {
+                      // Save anyway, then close both conflict and editor modals
+                      try {
+                        handleSaveActivity();
+                      } catch (err) {
+                        console.error('Save anyway failed:', err);
+                      }
                       setConflictModal(null);
-                      handleSaveActivity();
+                      setShowEditor(null);
                       setNotification({ title: '✅ Guardado', message: 'La actividad se guardó aunque hay conflicto de horario.', type: 'success' });
                     }}
                     className="py-3 rounded-xl border-2 border-green-600 bg-green-600 font-bold text-white"
@@ -1482,6 +1878,120 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Modal para FIJA_AJUSTABLE (Weekly Exception) */}
+        <AnimatePresence>
+          {adjustableActivityModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/70 z-[120] flex items-center justify-center p-4"
+              onClick={() => setAdjustableActivityModal(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 20 }}
+                className="paper-card sketch-border w-full max-w-md p-6 bg-white space-y-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-amber-100 border-2 border-amber-600 text-amber-700 flex items-center justify-center shrink-0">
+                    <span className="text-xl">🔓</span>
+                  </div>
+                  <div>
+                    <h3 className="font-hand text-2xl font-bold text-amber-700 leading-tight">Cambio Temporal</h3>
+                    <p className="text-sm text-slate-600 font-semibold mt-1">¿Cómo deseas cambiar {adjustableActivityModal.activityName}?</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 flex-col">
+                  <button
+                    onClick={() => {
+                      // Only this week - save to user_exceptions table
+                      setAdjustableActivityDecision({ 
+                        thisWeekOnly: true, 
+                        activityId: showEditor?.activityId || '' 
+                      });
+                      // Trigger save with decision flag
+                      setTimeout(() => {
+                        const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
+                        const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
+                        const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
+                        
+                        setSchedule(prev => {
+                          const copy = [...prev];
+                          let activities = [...copy[activeDayIndex].activities];
+                          activities = activities.map(a => 
+                            a.id === showEditor?.activityId
+                              ? { 
+                                  ...a, 
+                                  name: name.trim(), 
+                                  startTime: start, 
+                                  endTime: end, 
+                                  emoji, 
+                                  checklist: checklistText.split(/[\n,]/).map(item => item.trim()).filter(Boolean),
+                                  courseId: a.courseId || a.id, 
+                                  isCourseMarked, 
+                                  customColor: isValidHex(customColor) ? customColor : a.customColor,
+                                  activityType: editorData.activityType
+                                } 
+                              : a
+                          );
+                          activities.sort((a, b) => a.startTime.localeCompare(b.startTime));
+                          copy[activeDayIndex] = { ...copy[activeDayIndex], activities };
+                          return copy;
+                        });
+                        
+                        const modifiedData = {
+                          startTime: start,
+                          endTime: end,
+                          name: name.trim(),
+                          emoji,
+                        };
+                        saveWeeklyException(showEditor?.activityId || '', modifiedData);
+                        
+                        setNotification({
+                          title: '📅 Solo esta semana',
+                          message: `${name.trim()} cambió solo para esta semana.`,
+                          type: 'info'
+                        });
+                        setShowEditor(null);
+                        setAdjustableActivityDecision(null);
+                        setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE });
+                      }, 0);
+                    }}
+                    className="py-3 rounded-xl border-2 border-amber-600 bg-amber-600 font-bold text-white hover:bg-amber-700 transition"
+                  >
+                    Solo esta semana
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Permanent change
+                      setAdjustableActivityDecision({ 
+                        thisWeekOnly: false, 
+                        activityId: showEditor?.activityId || '' 
+                      });
+                      setAdjustableActivityModal(null);
+                      // Trigger handleSaveActivity which will now skip the modal check
+                      setTimeout(() => handleSaveActivity(), 0);
+                    }}
+                    className="py-3 rounded-xl border-2 border-indigo-900 bg-indigo-900 font-bold text-white hover:bg-indigo-950 transition"
+                  >
+                    Cambiar permanentemente
+                  </button>
+                  <button
+                    onClick={() => setAdjustableActivityModal(null)}
+                    className="py-3 rounded-xl border-2 border-slate-300 font-bold text-slate-700 bg-white hover:bg-slate-50 transition"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Floating settings button for mobile (always visible) */}
         <button
           onClick={() => setShowNotificationHoursModal(true)}
@@ -1495,10 +2005,8 @@ export default function App() {
 
       <style>{`
         .glass {
-          background: rgba(255, 255, 255, 0.7);
-          backdrop-filter: blur(25px);
-          -webkit-backdrop-filter: blur(25px);
-          border: 1px solid rgba(255, 255, 255, 0.4);
+          background: rgba(255, 255, 255, 1);
+          border: 1px solid rgba(148, 163, 184, 0.3);
         }
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
@@ -1588,12 +2096,17 @@ const DraggableActivity: React.FC<DraggableActivityProps> = ({ activity, onEdit,
 
       {/* Activity type indicator */}
       <div className="absolute top-3 left-3 z-10">
-        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-          isFixed 
-            ? 'bg-emerald-100 text-emerald-700' 
-            : 'bg-amber-100 text-amber-700'
+        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-sm font-bold border-2 ${
+          activity.activityType === ActivityType.FIJA_PERMANENTE
+            ? 'bg-slate-100 text-slate-700 border-slate-400'
+            : activity.activityType === ActivityType.FIJA_AJUSTABLE
+            ? 'bg-amber-100 text-amber-700 border-amber-400'
+            : 'bg-sky-100 text-sky-700 border-sky-400'
         }`}>
-          {isFixed ? '📌 Fija' : '📝 Tarea'}
+          {activity.activityType === ActivityType.FIJA_PERMANENTE && '🔒'}
+          {activity.activityType === ActivityType.FIJA_AJUSTABLE && '🔓'}
+          {activity.activityType === ActivityType.FLEXIBLE && '✏️'}
+          {!activity.activityType && '📌'}
         </span>
       </div>
 
@@ -1654,7 +2167,7 @@ const CategoryGroup: React.FC<CategoryGroupProps> = ({ title, options, onSelect 
           <button
             key={i}
             onClick={() => onSelect(opt)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white/80 rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-300 hover:bg-indigo-50 transition-all active:scale-95"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-300 hover:bg-indigo-50 transition-all active:scale-95"
           >
             <span className="text-base">{opt.emoji}</span>
             <span className="text-xs font-bold text-slate-600">{opt.name}</span>
