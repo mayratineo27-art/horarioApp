@@ -181,6 +181,15 @@ export default function App() {
   const [adjustableActivityDecision, setAdjustableActivityDecision] = useState<{ thisWeekOnly: boolean; activityId: string } | null>(null);
   const [aplicarTodaSemana, setAplicarTodaSemana] = useState(false);
   const courseManagerRef = useRef<HTMLDivElement | null>(null);
+  const [showAddCourseModal, setShowAddCourseModal] = useState(false);
+  const [newCourseForm, setNewCourseForm] = useState({
+    courseCode: '',
+    title: '',
+    dayIndex: 0,
+    startTime: '07:00',
+    endTime: '09:00',
+    emoji: '📘',
+  });
   
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
@@ -515,6 +524,82 @@ export default function App() {
     setNotification({
       title: '✅ Horario modificado',
       message: `Se añadió ${courseCode} a tus cursos y al horario.`,
+      type: 'success',
+    });
+    setTimeout(() => setNotification(null), 3200);
+  };
+
+  const handleCreateCourseFromForm = async () => {
+    const courseCode = newCourseForm.courseCode.trim().toUpperCase();
+    const title = newCourseForm.title.trim();
+    const { dayIndex, startTime, endTime, emoji } = newCourseForm;
+
+    if (!courseCode || !title) {
+      setNotification({
+        title: '⚠️ Datos incompletos',
+        message: 'Debes escribir código y nombre del curso.',
+        type: 'error',
+      });
+      setTimeout(() => setNotification(null), 2500);
+      return;
+    }
+
+    if (parseMinutes(endTime) <= parseMinutes(startTime)) {
+      setNotification({
+        title: '⚠️ Horario inválido',
+        message: 'La hora de fin debe ser mayor que la hora de inicio.',
+        type: 'error',
+      });
+      setTimeout(() => setNotification(null), 2500);
+      return;
+    }
+
+    const courseName = `${title} (${courseCode})`;
+
+    const nextSchedule = schedule.map((day, index) => {
+      if (index !== dayIndex) return day;
+
+      const alreadyExists = day.activities.some(activity => {
+        const activityCode = (activity.courseId || extractCourseCode(activity.name) || '').toUpperCase();
+        return activityCode === courseCode && activity.startTime === startTime && activity.endTime === endTime;
+      });
+
+      if (alreadyExists) {
+        return day;
+      }
+
+      const courseActivity: Activity = {
+        id: `course-${courseCode}-${dayIndex}-${Date.now()}`,
+        name: courseName,
+        category: Category.ACADEMIC,
+        startTime,
+        endTime,
+        isFixed: true,
+        isCourseMarked: true,
+        activityType: ActivityType.FIJA_PERMANENTE,
+        emoji,
+        courseId: courseCode,
+      };
+
+      return {
+        ...day,
+        activities: [...day.activities, courseActivity].sort((left, right) => left.startTime.localeCompare(right.startTime)),
+      };
+    });
+
+    await guardarHorario(nextSchedule);
+    setShowAddCourseModal(false);
+    setNewCourseForm({
+      courseCode: '',
+      title: '',
+      dayIndex: 0,
+      startTime: '07:00',
+      endTime: '09:00',
+      emoji: '📘',
+    });
+    setNotification({
+      title: '✅ Horario modificado',
+      message: `Se añadió ${courseName} al horario.`,
       type: 'success',
     });
     setTimeout(() => setNotification(null), 3200);
@@ -1599,7 +1684,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => courseManagerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    onClick={() => setShowAddCourseModal(true)}
                     className="inline-flex items-center gap-2 rounded-full border-2 border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700"
                   >
                     <Plus className="w-4 h-4" />
@@ -2195,6 +2280,100 @@ export default function App() {
                     className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-2 px-4 rounded-lg sketch-border border-2 border-indigo-900 transition"
                   >
                     Guardar
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Add Course Modal */}
+        <AnimatePresence>
+          {showAddCourseModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAddCourseModal(false)}
+              className="fixed inset-0 bg-slate-950/70 z-[130] flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 12 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md rounded-2xl border-2 border-indigo-900 bg-white p-5 space-y-4 shadow-[0_20px_60px_rgba(15,23,42,0.4)]"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="font-hand text-3xl font-black text-indigo-950">Añadir Curso</h3>
+                  <button
+                    onClick={() => setShowAddCourseModal(false)}
+                    className="w-10 h-10 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <input
+                    value={newCourseForm.courseCode}
+                    onChange={(e) => setNewCourseForm(prev => ({ ...prev, courseCode: e.target.value }))}
+                    placeholder="Código (ej: IS-999)"
+                    className="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 font-black text-indigo-900 focus:outline-none"
+                  />
+                  <input
+                    value={newCourseForm.title}
+                    onChange={(e) => setNewCourseForm(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Nombre del curso"
+                    className="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 font-bold text-indigo-900 focus:outline-none"
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <select
+                      value={newCourseForm.dayIndex}
+                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, dayIndex: Number(e.target.value) }))}
+                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-bold text-indigo-900 focus:outline-none"
+                    >
+                      {schedule.map((day, index) => (
+                        <option key={day.day} value={index}>{day.day}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={newCourseForm.emoji}
+                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, emoji: e.target.value || '📘' }))}
+                      placeholder="Emoji"
+                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-bold text-indigo-900 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="time"
+                      value={newCourseForm.startTime}
+                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, startTime: e.target.value }))}
+                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-mono font-bold text-indigo-900 focus:outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={newCourseForm.endTime}
+                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, endTime: e.target.value }))}
+                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-mono font-bold text-indigo-900 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowAddCourseModal(false)}
+                    className="flex-1 rounded-xl border-2 border-slate-300 bg-white py-3 font-black text-slate-700"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => { void handleCreateCourseFromForm(); }}
+                    className="flex-1 rounded-xl border-2 border-emerald-700 bg-emerald-600 py-3 font-black text-white"
+                  >
+                    Añadir al horario
                   </button>
                 </div>
               </motion.div>
