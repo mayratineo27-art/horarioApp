@@ -137,13 +137,13 @@ app.post('/api/push/subscribe', async (req, res) => {
     await saveSubscriptionToSupabase(userId, subscription, timezone || 'America/Santo_Domingo');
     
     // Also update local config for immediate availability (backward compatibility)
-    const config = await loadConfig();
+    const config = await loadConfig(userId);
     config.subscription = subscription;
     config.timezone = timezone || config.timezone || 'America/Santo_Domingo';
     if (Array.isArray(schedule)) {
       config.schedule = schedule;
     }
-    await saveConfig(config);
+    await saveConfig(config, userId);
     
     console.log(`[✓] Push subscription registered for user: ${userId} | timezone: ${config.timezone}`);
     res.json({ ok: true, message: 'Subscription saved and active for push notifications', userKey: userId });
@@ -173,13 +173,18 @@ app.post('/api/push/schedule', async (req, res) => {
     return;
   }
 
+  if (!userId) {
+    res.status(400).json({ ok: false, error: 'userId is required' });
+    return;
+  }
+
   try {
-    const config = await loadConfig();
+    const config = await loadConfig(userId);
     config.schedule = schedule;
     if (timezone) {
       config.timezone = timezone;
     }
-    await saveConfig(config);
+    await saveConfig(config, userId);
     res.json({ ok: true });
   } catch (error) {
     console.error('Error saving schedule:', error);
@@ -231,11 +236,16 @@ app.post('/api/push/notification-hours', async (req, res) => {
     return;
   }
 
+  if (!userId) {
+    res.status(400).json({ ok: false, error: 'userId is required' });
+    return;
+  }
+
   try {
-    const config = await loadConfig();
+    const config = await loadConfig(userId);
     config.notificationHourStart = notificationHourStart;
     config.notificationHourEnd = notificationHourEnd;
-    await saveConfig(config);
+    await saveConfig(config, userId);
     res.json({ ok: true });
   } catch (error) {
     console.error('Error saving notification hours:', error);
@@ -264,8 +274,14 @@ app.get('/api/push/config', async (req, res) => {
 app.get('/api/courses', async (req, res) => {
   if (!requirePushToken(req, res)) return;
 
+  const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+  if (!userId) {
+    res.status(400).json({ ok: false, error: 'userId is required' });
+    return;
+  }
+
   try {
-    const courses = await loadCourses();
+    const courses = await loadCourses(userId);
     res.json({ ok: true, courses });
   } catch (error) {
     console.error('Error loading courses:', error);

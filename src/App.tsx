@@ -401,11 +401,7 @@ export default function App() {
             const userSettings = await loadUserSettingsFromSupabase(session.user.id);
             const userSchedule = await loadUserScheduleFromSupabase(session.user.id);
 
-            // Local fallback: if backend missing the flag, allow a persisted local value
-            const localOnboardingFlag = typeof window !== 'undefined' && localStorage.getItem('mya_onboarding_completed') === '1';
-
-            // Check if user needs onboarding. If either backend says completed or local flag exists, skip onboarding.
-            const needsOnboarding = !(userSettings?.onboarding_completed || localOnboardingFlag);
+            const needsOnboarding = !userSettings?.onboarding_completed;
 
             if (needsOnboarding) {
               setShowOnboarding(true);
@@ -442,11 +438,7 @@ export default function App() {
               const userSettings = await loadUserSettingsFromSupabase(user.id);
               const userSchedule = await loadUserScheduleFromSupabase(user.id);
 
-              // Local fallback: if backend missing the flag, allow a persisted local value
-              const localOnboardingFlag = typeof window !== 'undefined' && localStorage.getItem('mya_onboarding_completed') === '1';
-
-              // Check if user needs onboarding. If either backend says completed or local flag exists, skip onboarding.
-              const needsOnboarding = !(userSettings?.onboarding_completed || localOnboardingFlag);
+              const needsOnboarding = !userSettings?.onboarding_completed;
 
               if (needsOnboarding) {
                 setShowOnboarding(true);
@@ -687,19 +679,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!currentUser?.id) return;
+
     scheduleNewNotification({
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       schedule,
+      userId: currentUser.id,
     }).catch(() => {
       // Keep app usable even if backend is temporarily unavailable.
     });
-  }, [schedule]);
+  }, [schedule, currentUser?.id]);
 
   useEffect(() => {
-    syncNotificationHours(notificationHourStart, notificationHourEnd, currentUser?.id).catch(() => {
+    if (!currentUser?.id) return;
+
+    syncNotificationHours(notificationHourStart, notificationHourEnd, currentUser.id).catch(() => {
       // Keep app usable even if backend is temporarily unavailable.
     });
-  }, [notificationHourStart, notificationHourEnd]);
+  }, [notificationHourStart, notificationHourEnd, currentUser?.id]);
 
   // --- NOTIFICATION LOGIC (90, 30, 10 min) ---
   useEffect(() => {

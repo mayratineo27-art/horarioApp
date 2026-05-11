@@ -291,12 +291,13 @@ function courseRowToRecord(course: FixedCourseRow, checklist: CourseChecklistRow
 
 export async function loadCourses(userKey?: string): Promise<CourseRecord[]> {
   const resolvedUserKey = (userKey || COURSE_USER_KEY).trim() || 'anonimo';
-  const localStore = loadCourseStore();
-  if (localStore.fixedCourses.length > 0) {
-    return localStore.fixedCourses.map(course => courseRowToRecord(course, localStore.courseChecklists[course.course_code] || null));
-  }
 
   if (!USE_SUPABASE || !supabase) {
+    const localStore = loadCourseStore();
+    if (localStore.fixedCourses.length > 0) {
+      return localStore.fixedCourses.map(course => courseRowToRecord(course, localStore.courseChecklists[course.course_code] || null));
+    }
+
     const config = loadConfigFromFile();
     const scheduleSource = Array.isArray(config.schedule) && config.schedule.length > 0 ? config.schedule : INITIAL_SCHEDULE;
     const seedCourses = buildCoursesFromSchedule(scheduleSource as DaySchedule[]);
@@ -324,8 +325,7 @@ export async function loadCourses(userKey?: string): Promise<CourseRecord[]> {
     if (checklistsError) throw checklistsError;
 
     if (!fixedCourses || fixedCourses.length === 0) {
-      const config = await loadConfig();
-      const scheduleSource = Array.isArray(config.schedule) && config.schedule.length > 0 ? config.schedule : INITIAL_SCHEDULE;
+      const scheduleSource = INITIAL_SCHEDULE;
       const seedCourses = buildCoursesFromSchedule(scheduleSource as DaySchedule[]);
       if (seedCourses.length > 0) {
         await saveCourses(seedCourses);
@@ -368,20 +368,10 @@ export async function loadCourses(userKey?: string): Promise<CourseRecord[]> {
     );
   } catch (error) {
     if (isMissingSchemaError(error)) {
-      console.warn('Supabase schema missing for courses, falling back to local file storage.');
-      const store = loadCourseStore();
-      if (store.fixedCourses.length === 0) {
-        const scheduleSource = INITIAL_SCHEDULE;
-        const seedCourses = buildCoursesFromSchedule(scheduleSource as DaySchedule[]);
-        if (seedCourses.length > 0) {
-          await saveCourses(seedCourses);
-          return seedCourses;
-        }
-      }
-      return store.fixedCourses.map(course => courseRowToRecord(course, store.courseChecklists[course.course_code] || null));
+      console.error('Supabase schema missing for courses. Local fallback is disabled in Supabase mode.');
     }
     console.error('Error loading courses:', error);
-    return [];
+    throw error;
   }
 }
 
@@ -483,40 +473,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
     }
   } catch (error) {
     if (isMissingSchemaError(error)) {
-      console.warn('Supabase schema missing for courses, saving locally instead.');
-      const store = loadCourseStore();
-      const nextFixedCourses: FixedCourseRow[] = [];
-      const nextChecklists: Record<string, CourseChecklistRow> = { ...store.courseChecklists };
-
-      for (const course of courses) {
-        const row: FixedCourseRow = {
-          id: store.fixedCourses.find(item => item.course_code === course.courseCode)?.id,
-          user_key: 'shared',
-          course_code: course.courseCode,
-          name: course.name,
-          category: course.category,
-          day_of_week: course.dayOfWeek,
-          start_time: course.startTime,
-          end_time: course.endTime,
-          es_fijo: course.esFijo,
-          is_exercise: course.isExercise,
-          emoji: course.emoji,
-          checklist: course.checklist,
-          updated_at: new Date().toISOString(),
-        };
-        nextFixedCourses.push(row);
-        nextChecklists[course.courseCode] = {
-          id: nextChecklists[course.courseCode]?.id,
-          user_key: 'shared',
-          course_code: course.courseCode,
-          items: course.checklist,
-          completed: course.completed,
-          updated_at: new Date().toISOString(),
-        };
-      }
-
-      saveCourseStore({ fixedCourses: nextFixedCourses, courseChecklists: nextChecklists });
-      return;
+      console.error('Supabase schema missing for courses. Local fallback is disabled in Supabase mode.');
     }
 
     console.error('Error saving courses:', error);
@@ -575,20 +532,7 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
     if (upsertError) throw upsertError;
   } catch (error) {
     if (isMissingSchemaError(error)) {
-      console.warn('Supabase schema missing for course checklists, saving locally instead.');
-      const store = loadCourseStore();
-      const fixedCourse = store.fixedCourses.find(course => course.course_code === courseCode);
-      store.courseChecklists[courseCode] = {
-        id: store.courseChecklists[courseCode]?.id,
-        user_key: resolvedUserKey,
-        course_code: courseCode,
-        course_id: fixedCourse?.id,
-        items,
-        completed,
-        updated_at: new Date().toISOString(),
-      };
-      saveCourseStore(store);
-      return;
+      console.error('Supabase schema missing for course checklists. Local fallback is disabled in Supabase mode.');
     }
 
     console.error('Error saving course checklist:', error instanceof Error ? error.message : error);
@@ -598,17 +542,16 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
 
 const TABLE_NAME = 'user_configs';
 
-export async function loadConfig(): Promise<UserConfig> {
+export async function loadConfig(userKey?: string): Promise<UserConfig> {
   if (!USE_SUPABASE || !supabase) {
     return loadConfigFromFile();
   }
 
   try {
-    const { data, error } = await supabase
-      .from(TABLE_NAME)
-      .select('*')
-      .limit(1)
-      .single();
+    const query = supabase.from(TABLE_NAME).select('*');
+    const { data, error } = userKey
+      ? await query.eq('user_key', userKey).single()
+      : await query.limit(1).single();
 
     if (error && error.code === 'PGRST116') {
       // No rows found, return default
@@ -630,50 +573,49 @@ export async function loadConfig(): Promise<UserConfig> {
     };
   } catch (error) {
     if (isMissingSchemaError(error)) {
-      console.warn('Supabase schema missing for config, falling back to local file storage.');
-      return loadConfigFromFile();
+      console.error('Supabase schema missing for config. Local fallback is disabled in Supabase mode.');
     }
     console.error('Error loading config:', error);
-    return getDefaultConfig();
+    throw error;
   }
 }
 
-export async function saveConfig(config: UserConfig): Promise<void> {
+export async function saveConfig(config: UserConfig, userKey?: string): Promise<void> {
   if (!USE_SUPABASE || !supabase) {
     saveConfigToFile(config);
     return;
   }
 
   try {
-    // Upsert: si existe, actualiza; si no, crea
-    const { error: upsertError } = await supabase.from(TABLE_NAME).upsert(
-      {
-        id: 1, // Always use same ID to keep single config
-        timezone: config.timezone,
-        schedule: config.schedule,
-        subscription: config.subscription,
-        sent_by_date: config.sentByDate,
-        notification_hour_start: config.notificationHourStart,
-        notification_hour_end: config.notificationHourEnd,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' }
-    );
+    const payload = userKey
+      ? {
+          user_key: userKey,
+          timezone: config.timezone,
+          schedule: config.schedule,
+          subscription: config.subscription,
+          sent_by_date: config.sentByDate,
+          notification_hour_start: config.notificationHourStart,
+          notification_hour_end: config.notificationHourEnd,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          id: 1,
+          timezone: config.timezone,
+          schedule: config.schedule,
+          subscription: config.subscription,
+          sent_by_date: config.sentByDate,
+          notification_hour_start: config.notificationHourStart,
+          notification_hour_end: config.notificationHourEnd,
+          updated_at: new Date().toISOString(),
+        };
+
+    const { error: upsertError } = await supabase.from(TABLE_NAME).upsert(payload, { onConflict: userKey ? 'user_key' : 'id' });
 
     if (upsertError) {
-      if (isMissingSchemaError(upsertError)) {
-        console.warn('Supabase schema missing for config, saving locally instead.');
-        saveConfigToFile(config);
-        return;
-      }
       console.error('Error saving config to Supabase:', upsertError);
       throw upsertError;
     }
   } catch (error) {
-    if (isMissingSchemaError(error)) {
-      saveConfigToFile(config);
-      return;
-    }
     console.error('Error saving config:', error);
     throw error;
   }
