@@ -175,8 +175,8 @@ export default function App() {
   
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [authReady, setAuthReady] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
 
@@ -1092,25 +1092,8 @@ export default function App() {
     }
   };
 
-  // Show loading or welcome screen if not authenticated
-  if (isAuthLoading) {
-    return <WelcomeScreen isLoading={true} />;
-  }
-
-  // Wait for initial auth check before rendering anything
-  // This prevents flashing/flickering when Supabase checks session
-  if (!authReady) {
-    return null;
-  }
-
   if (!currentUser) {
     return <WelcomeScreen isLoading={false} />;
-  }
-
-  // Show onboarding only when flag set and user data has finished loading.
-  if (isLoadingUserData) {
-    // While user data loads, show a loading state to avoid flashing the onboarding UI.
-    return <WelcomeScreen isLoading={true} />;
   }
 
   if (showOnboarding) {
