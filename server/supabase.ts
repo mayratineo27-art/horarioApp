@@ -289,7 +289,8 @@ function courseRowToRecord(course: FixedCourseRow, checklist: CourseChecklistRow
   };
 }
 
-export async function loadCourses(): Promise<CourseRecord[]> {
+export async function loadCourses(userKey?: string): Promise<CourseRecord[]> {
+  const resolvedUserKey = (userKey || COURSE_USER_KEY).trim() || 'anonimo';
   const localStore = loadCourseStore();
   if (localStore.fixedCourses.length > 0) {
     return localStore.fixedCourses.map(course => courseRowToRecord(course, localStore.courseChecklists[course.course_code] || null));
@@ -318,7 +319,7 @@ export async function loadCourses(): Promise<CourseRecord[]> {
     const { data: checklists, error: checklistsError } = await supabase
       .from(COURSE_TABLES.courseChecklists)
       .select('*')
-      .eq(COURSE_COLS.userKey, COURSE_USER_KEY);
+      .eq(COURSE_COLS.userKey, resolvedUserKey);
 
     if (checklistsError) throw checklistsError;
 
@@ -546,9 +547,8 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
     const { data: fixedCourses, error: fixedCourseError } = await supabase
       .from(COURSE_TABLES.fixedCourses)
       .select(COURSE_COLS.id)
-      .eq(COURSE_COLS.userKey, resolvedUserKey)
       .eq(COURSE_COLS.courseCode, courseCode)
-      .order('updated_at', { ascending: false })
+      .order(COURSE_COLS.updatedAt, { ascending: false })
       .limit(1);
 
     if (fixedCourseError) throw fixedCourseError;

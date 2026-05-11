@@ -600,6 +600,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!currentUser?.id) return;
+
     const hydrateCourses = async () => {
       try {
         const payload = courseCards.map(course => ({
@@ -619,7 +621,7 @@ export default function App() {
         if (payload.length > 0) {
           setCourseSyncStatus('syncing');
           await syncCoursesToBackend({ courses: payload });
-          const response = await loadCoursesFromBackend();
+          const response = await loadCoursesFromBackend(currentUser.id);
           const nextCourseMap: Record<string, CourseTaskItem[]> = {};
           const loadedCourses = response?.courses || [];
 
@@ -642,7 +644,7 @@ export default function App() {
     };
 
     hydrateCourses();
-  }, [courseCards.length]);
+  }, [courseCards.length, currentUser?.id]);
 
   // Setup audio and service worker message listener for playing sound
   useEffect(() => {

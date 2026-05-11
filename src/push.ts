@@ -158,9 +158,10 @@ export async function sendTestPush(userId?: string) {
   }
 }
 
-export async function loadCoursesFromBackend() {
+export async function loadCoursesFromBackend(userId?: string) {
   const baseUrl = await getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/courses`, {
+  const url = userId ? `${baseUrl}/api/courses?userId=${encodeURIComponent(userId)}` : `${baseUrl}/api/courses`;
+  const res = await fetch(url, {
     headers: await buildHeaders(),
   });
 
