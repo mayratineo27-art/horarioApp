@@ -169,6 +169,7 @@ export default function App() {
   const [courseChecklists, setCourseChecklists] = useState<Record<string, CourseTaskItem[]>>({});
   const [newCourseTask, setNewCourseTask] = useState('');
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  const [scheduleSyncStatus, setScheduleSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
   const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43', '#ffffff'];
@@ -182,6 +183,7 @@ export default function App() {
   const [aplicarTodaSemana, setAplicarTodaSemana] = useState(false);
   const courseManagerRef = useRef<HTMLDivElement | null>(null);
   const [showAddCourseModal, setShowAddCourseModal] = useState(false);
+  const [showEditorExitConfirm, setShowEditorExitConfirm] = useState(false);
   const [newCourseForm, setNewCourseForm] = useState({
     courseCode: '',
     title: '',
@@ -501,6 +503,9 @@ export default function App() {
   };
 
   const handleRemoveCourseFromSchedule = async (courseCode: string) => {
+    const confirmed = window.confirm(`¿Seguro que quieres eliminar ${courseCode} del horario?`);
+    if (!confirmed) return;
+
     const nextSchedule = schedule.map(day => ({
       ...day,
       activities: day.activities.filter(activity => {
@@ -1113,6 +1118,21 @@ export default function App() {
     setTimeout(() => setNotification(null), 2500);
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!notification?.undoActivityId) return;
+
+      const isUndo = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z';
+      if (!isUndo) return;
+
+      event.preventDefault();
+      undoCompletedActivity(notification.undoActivityId);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [notification?.undoActivityId]);
+
   const handleEnableNotifications = async () => {
     try {
       setPushError(null);
@@ -1201,6 +1221,7 @@ export default function App() {
     if (!currentUser?.id) return;
 
     try {
+      setScheduleSyncStatus('syncing');
       await saveUserScheduleToSupabase(
         currentUser.id,
         nuevoHorario,
@@ -1208,9 +1229,78 @@ export default function App() {
       );
 
       console.log('Horario guardado en Supabase');
+      setScheduleSyncStatus('saved');
+      setTimeout(() => setScheduleSyncStatus('idle'), 2000);
     } catch (err) {
       console.error('Error inesperado al guardar horario:', err);
+      setScheduleSyncStatus('error');
+      setTimeout(() => setScheduleSyncStatus('idle'), 2500);
     }
+  };
+
+  const findActivityById = (activityId?: string) => {
+    if (!activityId) return null;
+    for (const day of schedule) {
+      const activity = day.activities.find(item => item.id === activityId);
+      if (activity) return activity;
+    }
+    return null;
+  };
+
+  const hasEditorUnsavedChanges = () => {
+    if (!showEditor) return false;
+
+    const normalizedChecklist = checklistText
+      .split(/[\n,]/)
+      .map(item => item.trim())
+      .filter(Boolean)
+      .join('|');
+
+    if (showEditor.mode === 'add') {
+      return (
+        editorData.name.trim().length > 0
+        || editorData.start !== '12:00'
+        || editorData.end !== '13:00'
+        || (editorData.emoji || '📍') !== '📍'
+        || editorData.isCourseMarked
+        || (editorData.customColor || '').trim().length > 0
+        || editorData.activityType !== ActivityType.FLEXIBLE
+        || aplicarTodaSemana
+        || normalizedChecklist.length > 0
+      );
+    }
+
+    const original = findActivityById(showEditor.activityId);
+    if (!original) return true;
+
+    const originalChecklist = (original.checklist || []).map(item => item.trim()).filter(Boolean).join('|');
+    return (
+      editorData.name.trim() !== (original.name || '').trim()
+      || editorData.start !== original.startTime
+      || editorData.end !== original.endTime
+      || (editorData.emoji || '📍') !== (original.emoji || '📍')
+      || !!editorData.isCourseMarked !== !!original.isCourseMarked
+      || (editorData.customColor || '').trim() !== (original.customColor || '').trim()
+      || (editorData.activityType || ActivityType.FLEXIBLE) !== (original.activityType || ActivityType.FLEXIBLE)
+      || !!aplicarTodaSemana !== !!original.isWeekly
+      || normalizedChecklist !== originalChecklist
+    );
+  };
+
+  const closeEditorWithoutSaving = () => {
+    setShowEditorExitConfirm(false);
+    setShowEditor(null);
+    setAdjustableActivityDecision(null);
+    setAplicarTodaSemana(false);
+  };
+
+  const requestCloseEditor = () => {
+    if (!showEditor) return;
+    if (hasEditorUnsavedChanges()) {
+      setShowEditorExitConfirm(true);
+      return;
+    }
+    closeEditorWithoutSaving();
   };
 
   const handleSaveActivity = async (options?: { ignoreConflict?: boolean }) => {
@@ -1367,6 +1457,7 @@ export default function App() {
       });
     }
     
+    setShowEditorExitConfirm(false);
     setShowEditor(null);
     setAdjustableActivityDecision(null);
     setAplicarTodaSemana(false);
@@ -1570,6 +1661,12 @@ export default function App() {
                 <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-black">Estado</p>
                 <p className="mt-2 text-xl font-black text-indigo-950 leading-tight">{courseSyncStatus === 'syncing' ? 'Sincronizando cursos' : courseSyncStatus === 'error' ? 'Sincronización con errores' : 'Listo para trabajar'}</p>
                 <p className="mt-1 text-sm text-slate-500 font-bold leading-tight">Horario fijo, cursos y checklist quedan persistidos.</p>
+                <p className="mt-2 text-sm font-black leading-tight text-indigo-700">
+                  {scheduleSyncStatus === 'syncing' && '⏳ Guardando horario...'}
+                  {scheduleSyncStatus === 'saved' && '✅ Horario guardado en nube'}
+                  {scheduleSyncStatus === 'error' && '⚠️ Error al guardar horario'}
+                  {scheduleSyncStatus === 'idle' && '☁️ Horario sincronizado'}
+                </p>
               </div>
 
               {/* User Section */}
@@ -2042,7 +2139,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-slate-950/70 z-[110] flex items-center justify-center p-6"
-              onClick={() => setShowEditor(null)}
+              onClick={requestCloseEditor}
             >
               <motion.div
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -2056,7 +2153,7 @@ export default function App() {
                   <h3 className="font-hand text-2xl font-bold text-indigo-900">
                     {showEditor.mode === 'edit' ? 'Editar Actividad' : 'Nueva Actividad'}
                   </h3>
-                  <button onClick={() => setShowEditor(null)} className="p-2 border-2 border-slate-200 rounded-lg"><X className="w-4 h-4" /></button>
+                  <button onClick={requestCloseEditor} className="p-2 border-2 border-slate-200 rounded-lg"><X className="w-4 h-4" /></button>
                 </div>
 
                 <div className="space-y-4">
@@ -2228,6 +2325,53 @@ export default function App() {
                 >
                   {showEditor.mode === 'edit' ? 'Guardar Cambios' : 'Agendar'}
                 </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showEditorExitConfirm && showEditor && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/70 z-[125] flex items-center justify-center p-4"
+              onClick={() => setShowEditorExitConfirm(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 20 }}
+                className="w-full max-w-md rounded-2xl border-2 border-slate-900 bg-white p-5 space-y-4 shadow-[0_22px_64px_rgba(15,23,42,0.35)]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="font-hand text-3xl font-black text-indigo-950 leading-tight">¿Salir del editor?</h3>
+                <p className="text-sm font-bold text-slate-600">Tienes cambios sin guardar. Puedes volver, salir o guardar antes de cerrar.</p>
+
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setShowEditorExitConfirm(false)}
+                    className="py-3 rounded-xl border-2 border-slate-300 bg-white text-slate-700 font-black"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    onClick={closeEditorWithoutSaving}
+                    className="py-3 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-700 font-black"
+                  >
+                    Salir sin guardar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEditorExitConfirm(false);
+                      void handleSaveActivity();
+                    }}
+                    className="py-3 rounded-xl border-2 border-emerald-700 bg-emerald-600 text-white font-black"
+                  >
+                    {showEditor.mode === 'edit' ? 'Guardar y salir' : 'Añadir y salir'}
+                  </button>
+                </div>
               </motion.div>
             </motion.div>
           )}
