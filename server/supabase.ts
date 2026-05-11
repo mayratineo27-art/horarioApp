@@ -527,6 +527,8 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
 export async function saveCourseChecklist(courseCode: string, items: CourseTaskItem[], completed = false, userKey: string): Promise<void> {
   const resolvedUserKey = userKey.trim() || 'anonimo';
 
+  console.log(`[saveCourseChecklist] start user=${resolvedUserKey} course=${courseCode} items=${Array.isArray(items) ? items.length : 0} completed=${!!completed}`);
+
   if (!USE_SUPABASE || !supabase) {
     const store = loadCourseStore();
     const fixedCourse = store.fixedCourses.find(course => course.course_code === courseCode);
@@ -559,16 +561,18 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
       throw new Error(`Course not found: ${courseCode}`);
     }
 
-    const { error } = await supabase.from(COURSE_TABLES.courseChecklists).upsert({
+    const { data: upsertData, error: upsertError } = await supabase.from(COURSE_TABLES.courseChecklists).upsert({
       [COURSE_COLS.userKey]: resolvedUserKey,
       [COURSE_COLS.courseId]: fixedCourse[COURSE_COLS.id],
       [COURSE_COLS.courseCode]: courseCode,
       [COURSE_COLS.items]: items,
       [COURSE_COLS.completed]: completed,
       [COURSE_COLS.updatedAt]: new Date().toISOString(),
-    }, { onConflict: `${COURSE_COLS.userKey},${COURSE_COLS.courseId}` });
+    }, { onConflict: `${COURSE_COLS.userKey},${COURSE_COLS.courseId}` }).select();
 
-    if (error) throw error;
+    console.log('[saveCourseChecklist] upsert result', { upsertError, returnedRows: Array.isArray(upsertData) ? upsertData.length : null });
+
+    if (upsertError) throw upsertError;
   } catch (error) {
     if (isMissingSchemaError(error)) {
       console.warn('Supabase schema missing for course checklists, saving locally instead.');
@@ -587,7 +591,7 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
       return;
     }
 
-    console.error('Error saving course checklist:', error);
+    console.error('Error saving course checklist:', error instanceof Error ? error.message : error);
     throw error;
   }
 }

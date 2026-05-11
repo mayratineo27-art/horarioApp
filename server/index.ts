@@ -308,10 +308,12 @@ app.put('/api/courses/:courseCode/checklist', async (req, res) => {
   }
 
   try {
+    console.log(`[PUT] /api/courses/${courseCode}/checklist - payload: items=${Array.isArray(items) ? items.length : 0}, completed=${!!completed}, userId=${userId}`);
     await saveCourseChecklist(courseCode, items, !!completed, userId);
+    console.log(`[PUT] /api/courses/${courseCode}/checklist - saveCourseChecklist completed for user=${userId}`);
     res.json({ ok: true });
   } catch (error) {
-    console.error('Error saving checklist:', error);
+    console.error('Error saving checklist:', error instanceof Error ? error.message : error);
     res.status(500).json({ ok: false, error: 'Failed to save checklist' });
   }
 });
