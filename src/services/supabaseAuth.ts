@@ -54,11 +54,11 @@ export const convertAuthToUser = (authUser: any): User | null => {
  * Sign in with Google
  */
 export const signInWithGoogle = async () => {
-  // Ensure redirect goes back to the exact origin of the current page
-  // This prevents redirects to localhost in production
-  const redirectUrl = typeof window !== 'undefined' 
-    ? window.location.origin 
-    : 'https://horarioapp-ows5.onrender.com';
+  // Prefer canonical app URL when configured to avoid accidental localhost callbacks.
+  const configuredAppUrl = (import.meta.env.VITE_APP_URL || '').trim();
+  const redirectUrl = configuredAppUrl || (typeof window !== 'undefined'
+    ? window.location.origin
+    : 'https://horarioapp-ows5.onrender.com');
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
