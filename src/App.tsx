@@ -483,34 +483,39 @@ export default function App() {
     };
   }, []);
 
-  // Load course checklists from backend when user authenticates
+  // Load course checklists from Supabase when the authenticated user becomes available
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
 
-    const loadCourseChecklistsFromBackend = async () => {
-      try {
-        const response = await loadCoursesFromBackend();
-        const nextCourseMap: Record<string, CourseTaskItem[]> = {};
+    const cargarChecklists = async () => {
+      const { data, error } = await supabase
+        .from('course_checklists')
+        .select('*')
+        .eq('user_key', currentUser.id);
 
-        (response?.courses || []).forEach((course: any) => {
-          if (course.checklist && Array.isArray(course.checklist)) {
-            nextCourseMap[course.courseCode] = course.checklist.map((item: any, index: number) => ({
-              id: item.id || `task-${index}`,
-              text: item.text || String(item),
-              done: !!item.done,
-            }));
-          }
+      if (error) {
+        console.error('Error cargando checklists:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const checklists: Record<string, CourseTaskItem[]> = {};
+        data.forEach((row: any) => {
+          checklists[row.course_code] = Array.isArray(row.items)
+            ? row.items.map((item: any, index: number) => ({
+                id: item.id || `task-${index}`,
+                text: item.text || String(item),
+                done: !!item.done,
+              }))
+            : [];
         });
 
-        if (Object.keys(nextCourseMap).length > 0) {
-          setCourseChecklists(nextCourseMap);
-        }
-      } catch (error) {
-        console.error('Error loading course checklists from backend:', error);
+        console.log('Checklists cargados:', checklists);
+        setCourseChecklists(checklists);
       }
     };
 
-    loadCourseChecklistsFromBackend();
+    cargarChecklists();
   }, [currentUser?.id]);
 
   useEffect(() => {
