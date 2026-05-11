@@ -6,10 +6,11 @@ import { INITIAL_SCHEDULE } from '../src/constants.ts';
 
 dotenv.config({ override: true });
 
-const STORAGE_MODE = (process.env.STORAGE_MODE || 'local').toLowerCase();
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
 const SUPABASE_ANON_KEY = (process.env.SUPABASE_ANON_KEY || '').trim();
-const USE_SUPABASE = STORAGE_MODE === 'supabase' && !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+const STORAGE_MODE = (process.env.STORAGE_MODE || (SUPABASE_URL && SUPABASE_ANON_KEY ? 'supabase' : 'local')).toLowerCase();
+const SUPABASE_CONFIGURED = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+const USE_SUPABASE = SUPABASE_CONFIGURED && STORAGE_MODE !== 'local';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'user-config.json');
@@ -109,10 +110,12 @@ export async function initializeDatabase() {
     ensureDataFile();
     ensureCourseDataFile();
     console.log('✓ Local storage mode enabled (server/data/user-config.json)');
+    console.log(`Storage diagnostics: STORAGE_MODE=${STORAGE_MODE}, SUPABASE_URL=${SUPABASE_URL ? 'set' : 'missing'}, SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY ? 'set' : 'missing'}`);
     return;
   }
 
   console.log('✓ Supabase client initialized');
+  console.log(`Storage diagnostics: STORAGE_MODE=${STORAGE_MODE}, SUPABASE_URL=${SUPABASE_URL ? 'set' : 'missing'}, SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY ? 'set' : 'missing'}`);
 }
 
 export interface Activity {
