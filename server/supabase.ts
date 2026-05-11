@@ -6,8 +6,12 @@ import { INITIAL_SCHEDULE } from '../src/constants.ts';
 
 dotenv.config({ override: true });
 
-const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
-const SUPABASE_ANON_KEY = (process.env.SUPABASE_ANON_KEY || '').trim();
+function sanitizeEnv(value: string): string {
+  return value.trim().replace(/^['\"]+|['\"]+$/g, '');
+}
+
+const SUPABASE_URL = sanitizeEnv(process.env.SUPABASE_URL || '');
+const SUPABASE_ANON_KEY = sanitizeEnv(process.env.SUPABASE_ANON_KEY || '');
 const STORAGE_MODE = (process.env.STORAGE_MODE || (SUPABASE_URL && SUPABASE_ANON_KEY ? 'supabase' : 'local')).toLowerCase();
 const SUPABASE_CONFIGURED = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
 const USE_SUPABASE = SUPABASE_CONFIGURED;
@@ -45,13 +49,33 @@ const COURSE_COLS = {
 
 export let supabase: ReturnType<typeof createClient> | null = null;
 
-try {
-  if (USE_SUPABASE) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+function validateSupabaseUrl(urlValue: string): void {
+  try {
+    const parsed = new URL(urlValue);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new Error(`Unsupported protocol: ${parsed.protocol}`);
+    }
+  } catch {
+    throw new Error(`Invalid SUPABASE_URL value: ${urlValue || '(empty)'}`);
   }
-} catch (error) {
-  console.error('Supabase client init failed:', error);
-  throw error;
+}
+
+function getOrCreateSupabaseClient() {
+  if (!USE_SUPABASE) {
+    return null;
+  }
+  if (supabase) {
+    return supabase;
+  }
+
+  validateSupabaseUrl(SUPABASE_URL);
+  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+  return supabase;
 }
 
 function ensureDataFile() {
@@ -121,6 +145,13 @@ export async function initializeDatabase() {
     console.log('✓ Local storage mode enabled (server/data/user-config.json)');
     console.log(`Storage diagnostics: STORAGE_MODE=${STORAGE_MODE}, SUPABASE_URL=${SUPABASE_URL ? 'set' : 'missing'}, SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY ? 'set' : 'missing'}`);
     return;
+  }
+
+  try {
+    getOrCreateSupabaseClient();
+  } catch (error) {
+    console.error('Supabase client init failed:', error);
+    throw error;
   }
 
   if (!supabase) {
