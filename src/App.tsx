@@ -1475,12 +1475,12 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm bg-white border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)]"
+              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm bg-white border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)] font-hand"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-black">Navegación</p>
+                  <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500 font-black">Navegación</p>
                   <h2 className="font-hand text-3xl font-black text-indigo-950">Mya Dynamics</h2>
                 </div>
                 <button onClick={() => setDrawerOpen(false)} className="w-10 h-10 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center">
@@ -1494,14 +1494,14 @@ export default function App() {
                   className={`w-full rounded-2xl border-2 p-4 text-left flex items-center gap-3 ${drawerView === 'horario' ? 'bg-indigo-900 text-white border-indigo-950' : 'bg-white text-indigo-950 border-indigo-200'}`}
                 >
                   <Calendar className="w-5 h-5" />
-                  <span className="font-black">Horario</span>
+                  <span className="font-black text-3xl leading-none">Horario</span>
                 </button>
                 <button
                   onClick={() => { setDrawerView('mis-cursos'); setDrawerOpen(false); }}
                   className={`w-full rounded-2xl border-2 p-4 text-left flex items-center gap-3 ${drawerView === 'mis-cursos' ? 'bg-fuchsia-700 text-white border-fuchsia-950' : 'bg-white text-indigo-950 border-indigo-200'}`}
                 >
                   <GraduationCap className="w-5 h-5" />
-                  <span className="font-black">Mis Cursos</span>
+                  <span className="font-black text-3xl leading-none">Mis Cursos</span>
                 </button>
               </div>
 
@@ -1511,21 +1511,21 @@ export default function App() {
                   className="w-full rounded-2xl border-2 border-amber-500 bg-amber-400 text-amber-950 p-4 flex items-center gap-3 font-black"
                 >
                   <Bell className="w-5 h-5" />
-                  <span>Activar campana</span>
+                  <span className="text-3xl leading-none">Activar campana</span>
                 </button>
                 <button
                   onClick={() => setShowNotificationHoursModal(true)}
                   className="w-full rounded-2xl border-2 border-slate-300 bg-white text-slate-800 p-4 flex items-center gap-3 font-bold"
                 >
                   <Settings className="w-5 h-5" />
-                  <span>Horas de aviso</span>
+                  <span className="text-3xl leading-none">Horas de aviso</span>
                 </button>
               </div>
 
               <div className="mt-6 rounded-3xl border-2 border-indigo-200 bg-white p-4">
                 <p className="text-[10px] uppercase tracking-[0.4em] text-slate-500 font-black">Estado</p>
-                <p className="mt-2 text-sm font-bold text-indigo-950">{courseSyncStatus === 'syncing' ? 'Sincronizando cursos' : courseSyncStatus === 'error' ? 'Sincronización con errores' : 'Listo para trabajar'}</p>
-                <p className="mt-1 text-xs text-slate-500">Horario fijo, cursos y checklist quedan persistidos.</p>
+                <p className="mt-2 text-xl font-black text-indigo-950 leading-tight">{courseSyncStatus === 'syncing' ? 'Sincronizando cursos' : courseSyncStatus === 'error' ? 'Sincronización con errores' : 'Listo para trabajar'}</p>
+                <p className="mt-1 text-sm text-slate-500 font-bold leading-tight">Horario fijo, cursos y checklist quedan persistidos.</p>
               </div>
 
               {/* User Section */}
@@ -1544,8 +1544,8 @@ export default function App() {
                       </div>
                     )}
                     <div className="flex-1">
-                      <p className="text-sm font-bold text-indigo-950 truncate">{currentUser.name}</p>
-                      <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
+                      <p className="text-xl font-black text-indigo-950 truncate leading-tight">{currentUser.name}</p>
+                      <p className="text-sm text-slate-500 truncate font-bold">{currentUser.email}</p>
                     </div>
                   </div>
                   <button
@@ -1563,7 +1563,7 @@ export default function App() {
                     className="w-full rounded-2xl border-2 border-red-500 bg-red-50 text-red-700 p-3 flex items-center justify-center gap-2 font-bold hover:bg-red-100 transition"
                   >
                     <X className="w-4 h-4" />
-                    <span>Cerrar sesión</span>
+                    <span className="text-3xl leading-none">Cerrar sesión</span>
                   </button>
                 </div>
               )}
