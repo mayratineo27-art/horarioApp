@@ -471,6 +471,36 @@ export default function App() {
     };
   }, []);
 
+  // Load course checklists from backend when user authenticates
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const loadCourseChecklistsFromBackend = async () => {
+      try {
+        const response = await loadCoursesFromBackend();
+        const nextCourseMap: Record<string, CourseTaskItem[]> = {};
+
+        (response?.courses || []).forEach((course: any) => {
+          if (course.checklist && Array.isArray(course.checklist)) {
+            nextCourseMap[course.courseCode] = course.checklist.map((item: any, index: number) => ({
+              id: item.id || `task-${index}`,
+              text: item.text || String(item),
+              done: !!item.done,
+            }));
+          }
+        });
+
+        if (Object.keys(nextCourseMap).length > 0) {
+          setCourseChecklists(nextCourseMap);
+        }
+      } catch (error) {
+        console.error('Error loading course checklists from backend:', error);
+      }
+    };
+
+    loadCourseChecklistsFromBackend();
+  }, [currentUser?.id]);
+
   useEffect(() => {
     localStorage.setItem('mya_dynamics_schedule', JSON.stringify(schedule));
     localStorage.setItem('mya_dynamics_completed', JSON.stringify(completedToday));
