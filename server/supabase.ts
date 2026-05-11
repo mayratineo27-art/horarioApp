@@ -43,7 +43,16 @@ const COURSE_COLS = {
   completed: 'completed',
 } as const;
 
-export const supabase = USE_SUPABASE ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+export let supabase: ReturnType<typeof createClient> | null = null;
+
+try {
+  if (USE_SUPABASE) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+} catch (error) {
+  console.error('Supabase client init failed, falling back to local storage:', error);
+  supabase = null;
+}
 
 function ensureDataFile() {
   if (!fs.existsSync(DATA_DIR)) {
