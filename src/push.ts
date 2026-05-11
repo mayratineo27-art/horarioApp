@@ -71,7 +71,7 @@ export async function subscribeToPush(registration: ServiceWorkerRegistration): 
 
   return registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: convertedKey,
+    applicationServerKey: convertedKey as BufferSource,
   });
 }
 
