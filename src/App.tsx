@@ -95,6 +95,13 @@ type CourseCard = {
   checklist: CourseTaskItem[];
 };
 
+type CourseTemplate = {
+  courseCode: string;
+  title: string;
+  emoji: string;
+  blocks: Array<{ dayIndex: number; activity: Activity }>;
+};
+
 export default function App() {
   // --- STATE ---
   const [activeDayIndex, setActiveDayIndex] = useState(() => {
@@ -173,6 +180,7 @@ export default function App() {
   const [adjustableActivityModal, setAdjustableActivityModal] = useState<{ activityType: string; activityName: string } | null>(null);
   const [adjustableActivityDecision, setAdjustableActivityDecision] = useState<{ thisWeekOnly: boolean; activityId: string } | null>(null);
   const [aplicarTodaSemana, setAplicarTodaSemana] = useState(false);
+  const courseManagerRef = useRef<HTMLDivElement | null>(null);
   
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
@@ -382,7 +390,98 @@ export default function App() {
 
   const selectedCourse = courseCards.find(course => course.courseCode === selectedCourseCode) || null;
 
+  const courseTemplates = useMemo<CourseTemplate[]>(() => {
+    const templates = new Map<string, CourseTemplate>();
+
+    INITIAL_SCHEDULE.forEach((day, dayIndex) => {
+      day.activities.forEach(activity => {
+        const courseCode = extractCourseCode(activity.name);
+        if (!courseCode) return;
+
+        const existing = templates.get(courseCode);
+        if (!existing) {
+          templates.set(courseCode, {
+            courseCode,
+            title: stripCourseCode(activity.name),
+            emoji: activity.emoji || '📘',
+            blocks: [{ dayIndex, activity }],
+          });
+          return;
+        }
+
+        existing.blocks.push({ dayIndex, activity });
+      });
+    });
+
+    return Array.from(templates.values()).sort((left, right) => left.courseCode.localeCompare(right.courseCode));
+  }, []);
+
+  const activeCourseCodes = useMemo(() => new Set(courseCards.map(course => course.courseCode)), [courseCards]);
+
   const selectedCourseTasks = selectedCourse ? (courseChecklists[selectedCourse.courseCode] || selectedCourse.checklist || []) : [];
+
+  const handleRemoveCourseFromSchedule = async (courseCode: string) => {
+    const nextSchedule = schedule.map(day => ({
+      ...day,
+      activities: day.activities.filter(activity => {
+        const activityCourseCode = activity.courseId || extractCourseCode(activity.name);
+        return activityCourseCode !== courseCode;
+      }),
+    }));
+
+    await guardarHorario(nextSchedule);
+    setSelectedCourseCode(null);
+    setNotification({
+      title: '✅ Horario modificado',
+      message: `Se eliminó ${courseCode} de tus cursos y del horario.`,
+      type: 'success',
+    });
+    setTimeout(() => setNotification(null), 3200);
+  };
+
+  const handleAddCourseToSchedule = async (courseCode: string) => {
+    const template = courseTemplates.find(course => course.courseCode === courseCode);
+    if (!template) {
+      setNotification({
+        title: '⚠️ No encontrado',
+        message: `No se encontró plantilla para ${courseCode}.`,
+        type: 'error',
+      });
+      setTimeout(() => setNotification(null), 2800);
+      return;
+    }
+
+    const nextSchedule = schedule.map((day, dayIndex) => {
+      const dayTemplateBlocks = template.blocks.filter(block => block.dayIndex === dayIndex);
+      if (dayTemplateBlocks.length === 0) return day;
+
+      const nextActivities = [...day.activities];
+
+      dayTemplateBlocks.forEach(({ activity }) => {
+        const alreadyExists = nextActivities.some(existing => {
+          const existingCode = existing.courseId || extractCourseCode(existing.name);
+          return existingCode === courseCode && existing.startTime === activity.startTime && existing.endTime === activity.endTime;
+        });
+
+        if (!alreadyExists) {
+          nextActivities.push({ ...activity });
+        }
+      });
+
+      return {
+        ...day,
+        activities: nextActivities.sort((left, right) => left.startTime.localeCompare(right.startTime)),
+      };
+    });
+
+    await guardarHorario(nextSchedule);
+    setNotification({
+      title: '✅ Horario modificado',
+      message: `Se añadió ${courseCode} a tus cursos y al horario.`,
+      type: 'success',
+    });
+    setTimeout(() => setNotification(null), 3200);
+  };
 
   const persistCourseTasks = async (courseCode: string, nextTasks: CourseTaskItem[]) => {
     console.log('1. Guardando checklist:', courseCode, nextTasks);
@@ -1461,10 +1560,19 @@ export default function App() {
                   <h3 className="font-hand text-2xl font-black text-indigo-950">Mis Cursos</h3>
                   <p className="text-sm text-slate-500 font-semibold">Tarjetas persistentes con tareas sincronizadas.</p>
                 </div>
-                <span className="inline-flex items-center gap-2 rounded-full border-2 border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-black text-fuchsia-700">
-                  <CheckSquare className="w-4 h-4" />
-                  {courseCards.length} cursos
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => courseManagerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className="inline-flex items-center gap-2 rounded-full border-2 border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Añadir curso
+                  </button>
+                  <span className="inline-flex items-center gap-2 rounded-full border-2 border-fuchsia-200 bg-fuchsia-50 px-3 py-1 text-xs font-black text-fuchsia-700">
+                    <CheckSquare className="w-4 h-4" />
+                    {courseCards.length} cursos
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
@@ -1474,34 +1582,92 @@ export default function App() {
                   const progress = total === 0 ? 0 : Math.round((done / total) * 100);
 
                   return (
-                    <button
+                    <div
                       key={course.courseCode}
-                      onClick={() => setSelectedCourseCode(course.courseCode)}
-                      className="text-left rounded-3xl border-2 border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] hover:border-indigo-300 transition"
+                      className="rounded-3xl border-2 border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
                     >
-                      <div className="flex items-start gap-4">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 via-white to-fuchsia-100 border-2 border-indigo-200 flex items-center justify-center text-3xl shrink-0">
+                      <button
+                        onClick={() => setSelectedCourseCode(course.courseCode)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-100 via-white to-fuchsia-100 border-2 border-indigo-200 flex items-center justify-center text-3xl shrink-0">
+                            {course.emoji}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 font-black">{course.courseCode}</p>
+                                <h4 className="font-hand text-2xl font-black text-indigo-950 truncate">{course.title}</h4>
+                              </div>
+                              <span className="rounded-full border-2 border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{progress}%</span>
+                            </div>
+
+                            <p className="mt-2 text-sm text-slate-500 font-semibold">{course.dayOfWeek} · {course.startTime} - {course.endTime}</p>
+                            <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+                              <div className="h-full bg-gradient-to-r from-fuchsia-500 to-indigo-600" style={{ width: `${progress}%` }} />
+                            </div>
+                            <p className="mt-2 text-xs text-slate-400 font-semibold">{done}/{total || 0} tareas completadas</p>
+                          </div>
+                        </div>
+                      </button>
+
+                      <div className="mt-3 flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setSelectedCourseCode(course.courseCode)}
+                          className="rounded-xl border-2 border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700"
+                        >
+                          Ver
+                        </button>
+                        <button
+                          onClick={() => { void handleRemoveCourseFromSchedule(course.courseCode); }}
+                          className="rounded-xl border-2 border-rose-300 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div ref={courseManagerRef} className="mt-5 rounded-3xl border-2 border-indigo-200 bg-indigo-50/60 p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h4 className="font-hand text-2xl font-black text-indigo-950">Gestionar Cursos</h4>
+                  <span className="text-xs font-black text-indigo-700 uppercase tracking-[0.25em]">Catálogo</span>
+                </div>
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {courseTemplates.map(course => {
+                    const isActive = activeCourseCodes.has(course.courseCode);
+
+                    return (
+                      <div key={course.courseCode} className="rounded-2xl border-2 border-indigo-200 bg-white p-3 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl border-2 border-indigo-200 bg-indigo-50 flex items-center justify-center text-xl shrink-0">
                           {course.emoji}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 font-black">{course.courseCode}</p>
-                              <h4 className="font-hand text-2xl font-black text-indigo-950 truncate">{course.title}</h4>
-                            </div>
-                            <span className="rounded-full border-2 border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">{progress}%</span>
-                          </div>
-
-                          <p className="mt-2 text-sm text-slate-500 font-semibold">{course.dayOfWeek} · {course.startTime} - {course.endTime}</p>
-                          <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden border border-slate-200">
-                            <div className="h-full bg-gradient-to-r from-fuchsia-500 to-indigo-600" style={{ width: `${progress}%` }} />
-                          </div>
-                          <p className="mt-2 text-xs text-slate-400 font-semibold">{done}/{total || 0} tareas completadas</p>
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400 font-black">{course.courseCode}</p>
+                          <p className="text-sm font-black text-indigo-950 truncate">{course.title}</p>
                         </div>
+                        {isActive ? (
+                          <button
+                            onClick={() => { void handleRemoveCourseFromSchedule(course.courseCode); }}
+                            className="rounded-xl border-2 border-rose-300 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700"
+                          >
+                            Eliminar
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { void handleAddCourseToSchedule(course.courseCode); }}
+                            className="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
+                          >
+                            Añadir
+                          </button>
+                        )}
                       </div>
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </section>
@@ -1669,6 +1835,12 @@ export default function App() {
                 </div>
 
                 <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => { void handleRemoveCourseFromSchedule(selectedCourse.courseCode); }}
+                    className="flex-1 rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 font-black text-rose-700"
+                  >
+                    Eliminar curso
+                  </button>
                   <button onClick={() => setSelectedCourseCode(null)} className="flex-1 rounded-2xl border-2 border-slate-300 bg-white px-4 py-3 font-black text-slate-700">
                     Cerrar
                   </button>
