@@ -30,6 +30,7 @@ export interface Activity {
   emoji?: string;
   courseId?: string;
   checklist?: string[];
+  isWeekly?: boolean;
 }
 
 export interface DaySchedule {

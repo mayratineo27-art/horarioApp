@@ -163,15 +163,16 @@ export default function App() {
   const [newCourseTask, setNewCourseTask] = useState('');
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
-  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE });
+  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
   const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43', '#ffffff'];
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
-  const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; suggestionStart: string; suggestionEnd: string; start: string; end: string } | null>(null);
+  const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; suggestionStart: string; suggestionEnd: string; start: string; end: string; autoMoveMessage?: string } | null>(null);
   const [checklistText, setChecklistText] = useState('');
   const [adjustableActivityModal, setAdjustableActivityModal] = useState<{ activityType: string; activityName: string } | null>(null);
   const [adjustableActivityDecision, setAdjustableActivityDecision] = useState<{ thisWeekOnly: boolean; activityId: string } | null>(null);
+  const [aplicarTodaSemana, setAplicarTodaSemana] = useState(false);
   
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
@@ -215,6 +216,41 @@ export default function App() {
 
   const stripCourseCode = (name: string) => name.replace(/\s*\(IS-\d+\)/, '').trim();
 
+  const normalizeActivitySignature = (name: string, start: string, end: string) => `${name.trim().toLowerCase()}|${start}|${end}`;
+
+  const sameActivitySignature = (activity: Activity, name: string, start: string, end: string) => (
+    normalizeActivitySignature(activity.name, activity.startTime, activity.endTime) === normalizeActivitySignature(name, start, end)
+  );
+
+  const pushActivitiesForward = (dayActivities: Activity[], nuevaActividad: Activity) => {
+    const inicio = parseMinutes(nuevaActividad.startTime);
+    const fin = parseMinutes(nuevaActividad.endTime);
+
+    return [...dayActivities]
+      .sort((left, right) => left.startTime.localeCompare(right.startTime))
+      .map(activity => {
+        if (activity.id === nuevaActividad.id) return activity;
+        if (activity.isFixed || activity.esFijo || activity.activityType === ActivityType.FIJA_PERMANENTE) return activity;
+
+        const activityStart = parseMinutes(activity.startTime);
+        const activityEnd = parseMinutes(activity.endTime);
+
+        if (activityStart < fin && activityEnd > inicio) {
+          const duration = activityEnd - activityStart;
+          const newStart = fin;
+          const newEnd = newStart + duration;
+          return {
+            ...activity,
+            startTime: formatMinutes(newStart),
+            endTime: formatMinutes(newEnd),
+          };
+        }
+
+        return activity;
+      })
+      .sort((left, right) => left.startTime.localeCompare(right.startTime));
+  };
+
   const isActivityArchived = (activityId: string) => !!completedToday[activityId];
 
   const weeklyResetStorageKey = 'mya_dynamics_last_fixed_restore';
@@ -249,6 +285,12 @@ export default function App() {
       localStorage.setItem(weeklyResetStorageKey, mondayKey);
     }
   };
+
+  useEffect(() => {
+    if (!showEditor) {
+      setAplicarTodaSemana(false);
+    }
+  }, [showEditor]);
 
   const getNearestFreeBlock = (dayIndex: number, durationMinutes: number, desiredStart = 300, excludedActivityId?: string) => {
     const dayActivities = schedule[dayIndex].activities
@@ -878,13 +920,13 @@ export default function App() {
     }
   };
 
-  const handleSaveActivity = () => {
+  const handleSaveActivity = (options?: { ignoreConflict?: boolean }) => {
     const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
     const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
     const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
     if (!name.trim()) return;
 
-    const checklist = checklistText
+    const nextChecklist = checklistText
       .split(/[\n,]/)
       .map(item => item.trim())
       .filter(Boolean);
@@ -923,7 +965,7 @@ export default function App() {
           editorData.activityType
         )
       : null;
-    if (conflict) {
+    if (conflict && !options?.ignoreConflict) {
       const duration = parseMinutes(end) - parseMinutes(start);
       const suggestion = getNearestFreeBlock(activeDayIndex, duration, parseMinutes(start), showEditor?.activityId);
       const [suggestionStart, suggestionEnd] = suggestion.split(' - ');
@@ -935,51 +977,77 @@ export default function App() {
         suggestionEnd,
         start,
         end,
+        autoMoveMessage: `Se moverá automáticamente: ${conflict.name} de ${end} - ${formatMinutes(parseMinutes(end) + (parseMinutes(conflict.endTime) - parseMinutes(conflict.startTime)))}`,
       });
       return;
     }
 
-    setSchedule(prev => {
-      const copy = [...prev];
-      let activities = [...copy[activeDayIndex].activities];
+    const baseActivity: Activity = {
+      id: showEditor?.mode === 'edit' && showEditor.activityId ? showEditor.activityId : `manual-${Date.now()}`,
+      name: name.trim(),
+      startTime: start,
+      endTime: end,
+      category: Category.SPECIAL,
+      emoji,
+      courseId: showEditor?.mode === 'edit' && showEditor.activityId ? showEditor.activityId : `manual-${Date.now()}`,
+      checklist: nextChecklist,
+      isCourseMarked,
+      customColor: chosenColor,
+      activityType: editorData.activityType,
+      isWeekly: aplicarTodaSemana,
+    };
 
-      if (showEditor?.mode === 'edit' && showEditor.activityId) {
-        activities = activities.map(a => 
-          a.id === showEditor.activityId 
-            ? { 
-                ...a, 
-                name: name.trim(), 
-                startTime: start, 
-                endTime: end, 
-                emoji, 
-                checklist, 
-                courseId: a.courseId || a.id, 
-                isCourseMarked, 
-                customColor: isValidHex(customColor) ? customColor : a.customColor,
-                activityType: editorData.activityType // Use the updated activity type from editor
-              } 
-            : a
-        );
-      } else {
-        const newAct: Activity = {
-          id: `manual-${Date.now()}`,
-          name: name.trim(),
-          startTime: start,
-          endTime: end,
-          category: Category.SPECIAL,
-          emoji,
-          courseId: `manual-${Date.now()}`,
-          checklist,
-          isCourseMarked,
-          customColor: chosenColor,
-          activityType: ActivityType.FLEXIBLE, // New activities default to FLEXIBLE
+    setSchedule(prev => {
+      const nextSchedule = prev.map(day => ({ ...day, activities: [...day.activities] }));
+
+      const applyToDay = (activities: Activity[], dayIndex: number) => {
+        const nextActivities = [...activities];
+        const isEditingCurrent = showEditor?.mode === 'edit' && showEditor.activityId && dayIndex === activeDayIndex;
+        const targetId = isEditingCurrent
+          ? showEditor.activityId!
+          : `${baseActivity.id}-${dayIndex}`;
+
+        const targetActivity: Activity = {
+          ...baseActivity,
+          id: targetId,
+          courseId: baseActivity.courseId || targetId,
+          isWeekly: aplicarTodaSemana,
         };
-        activities.push(newAct);
+
+        const existingIndex = isEditingCurrent
+          ? nextActivities.findIndex(activity => activity.id === showEditor.activityId)
+          : nextActivities.findIndex(activity => sameActivitySignature(activity, targetActivity.name, targetActivity.startTime, targetActivity.endTime));
+
+        if (existingIndex >= 0) {
+          nextActivities[existingIndex] = {
+            ...nextActivities[existingIndex],
+            ...targetActivity,
+            id: nextActivities[existingIndex].id,
+            isWeekly: aplicarTodaSemana,
+          };
+        } else {
+          nextActivities.push(targetActivity);
+        }
+
+        const sortedActivities = nextActivities.sort((left, right) => left.startTime.localeCompare(right.startTime));
+        return options?.ignoreConflict && dayIndex === activeDayIndex
+          ? pushActivitiesForward(sortedActivities, targetActivity)
+          : sortedActivities;
+      };
+
+      if (aplicarTodaSemana) {
+        return nextSchedule.map((day, dayIndex) => ({
+          ...day,
+          activities: applyToDay(day.activities, dayIndex),
+        }));
       }
 
-      activities.sort((a, b) => a.startTime.localeCompare(b.startTime));
-      copy[activeDayIndex] = { ...copy[activeDayIndex], activities };
-      return copy;
+      nextSchedule[activeDayIndex] = {
+        ...nextSchedule[activeDayIndex],
+        activities: applyToDay(nextSchedule[activeDayIndex].activities, activeDayIndex),
+      };
+
+      return nextSchedule;
     });
 
     setNotification({ 
@@ -1012,7 +1080,8 @@ export default function App() {
     
     setShowEditor(null);
     setAdjustableActivityDecision(null);
-    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE });
+    setAplicarTodaSemana(false);
+    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -1035,12 +1104,15 @@ export default function App() {
         emoji: activity.emoji || '📍',
         isCourseMarked: activity.isCourseMarked || false,
         customColor: activity.customColor || '',
-        activityType: activity.activityType || ActivityType.FLEXIBLE
+        activityType: activity.activityType || ActivityType.FLEXIBLE,
+        isWeekly: !!activity.isWeekly,
       });
+      setAplicarTodaSemana(!!activity.isWeekly);
       setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
-      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE[0], activityType: ActivityType.FLEXIBLE });
+      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE[0], activityType: ActivityType.FLEXIBLE, isWeekly: false });
+      setAplicarTodaSemana(false);
       setChecklistText('');
       setShowEditor({ mode: 'add' });
     }
@@ -1605,7 +1677,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[110] flex items-center justify-center p-6"
+              className="fixed inset-0 bg-slate-950/70 z-[110] flex items-center justify-center p-6"
               onClick={() => setShowEditor(null)}
             >
               <motion.div
@@ -1613,7 +1685,7 @@ export default function App() {
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
                   id="modal-editar-actividad"
-                  className="bg-white border-2 border-indigo-950 rounded-2xl w-full max-w-sm p-8 space-y-6 shadow-lg"
+                  className="bg-white border-2 border-indigo-950 rounded-2xl w-full max-w-sm p-8 space-y-6 shadow-lg overflow-y-auto max-h-[88vh] overscroll-contain"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-between items-center">
@@ -1756,6 +1828,19 @@ export default function App() {
                         className="w-full bg-slate-50 border-2 border-indigo-900 p-3 rounded-xl focus:outline-none font-mono text-sm"
                       />
                       <div className="w-10 h-10 rounded-lg border-2" style={{ background: editorData.customColor || 'transparent' }} />
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="todaSemana"
+                        checked={aplicarTodaSemana}
+                        onChange={e => setAplicarTodaSemana(e.target.checked)}
+                        className="w-5 h-5 accent-blue-700"
+                      />
+                      <label htmlFor="todaSemana" className="text-sm font-bold text-blue-700">
+                        📅 Aplicar a toda la semana
+                      </label>
                     </div>
 
                     <div className="mt-2 flex gap-2">
@@ -1919,6 +2004,9 @@ export default function App() {
                     <h3 className="font-hand text-2xl font-bold text-red-700 leading-tight">{conflictModal.title}</h3>
                     <p className="text-sm text-slate-600 font-semibold mt-1">{conflictModal.message}</p>
                     <p className="text-sm text-indigo-900 font-bold mt-2">{conflictModal.suggestion}</p>
+                    {conflictModal.autoMoveMessage && (
+                      <p className="text-sm text-amber-700 font-bold mt-2">{conflictModal.autoMoveMessage}</p>
+                    )}
                   </div>
                 </div>
 
@@ -1931,15 +2019,12 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => {
-                      // Save anyway, then close both conflict and editor modals
                       try {
-                        handleSaveActivity();
+                        handleSaveActivity({ ignoreConflict: true });
                       } catch (err) {
                         console.error('Save anyway failed:', err);
                       }
                       setConflictModal(null);
-                      setShowEditor(null);
-                      setNotification({ title: '✅ Guardado', message: 'La actividad se guardó aunque hay conflicto de horario.', type: 'success' });
                     }}
                     className="py-3 rounded-xl border-2 border-green-600 bg-green-600 font-bold text-white"
                   >
@@ -2041,7 +2126,7 @@ export default function App() {
                         });
                         setShowEditor(null);
                         setAdjustableActivityDecision(null);
-                        setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE });
+                        setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
                       }, 0);
                     }}
                     className="py-3 rounded-xl border-2 border-amber-600 bg-amber-600 font-bold text-white hover:bg-amber-700 transition"
@@ -2087,10 +2172,6 @@ export default function App() {
       </div>
 
       <style>{`
-        .glass {
-          background: rgba(255, 255, 255, 1);
-          border: 1px solid rgba(148, 163, 184, 0.3);
-        }
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }
