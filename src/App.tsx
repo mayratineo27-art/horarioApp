@@ -343,15 +343,27 @@ export default function App() {
   const selectedCourseTasks = selectedCourse ? (courseChecklists[selectedCourse.courseCode] || selectedCourse.checklist || []) : [];
 
   const persistCourseTasks = async (courseCode: string, nextTasks: CourseTaskItem[]) => {
+    console.log('1. Guardando checklist:', courseCode, nextTasks);
+    console.log('2. Usuario actual:', currentUser?.id);
+
     setCourseChecklists(prev => ({ ...prev, [courseCode]: nextTasks }));
+
+    if (!currentUser?.id) {
+      console.error('3. ERROR: No hay usuario autenticado');
+      return;
+    }
+
     try {
-      await saveCourseChecklistToBackend(
+      console.log('4. Enviando a Supabase...');
+      const data = await saveCourseChecklistToBackend(
         courseCode,
         nextTasks,
         nextTasks.length > 0 && nextTasks.every(task => task.done),
-        currentUser?.id
+        currentUser.id
       );
+      console.log('6. GUARDADO EXITOSO:', data);
     } catch (error) {
+      console.error('5. ERROR Supabase:', error);
       setNotification({ title: '⚠️ Sincronización pendiente', message: 'Las tareas se guardaron localmente, pero el backend no respondió.', type: 'error' });
       setTimeout(() => setNotification(null), 3500);
     }

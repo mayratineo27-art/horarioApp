@@ -195,6 +195,8 @@ export async function saveCourseChecklistToBackend(courseCode: string, items: un
   if (!res.ok) {
     throw new Error('No se pudo guardar la lista del curso.');
   }
+
+  return res.json();
 }
 
 /**
