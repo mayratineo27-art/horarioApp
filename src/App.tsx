@@ -413,8 +413,45 @@ export default function App() {
       });
     });
 
+    // Merge with courses currently present in user schedule so manually added courses are visible too.
+    schedule.forEach((day, dayIndex) => {
+      day.activities.forEach(activity => {
+        const inferredCode = activity.courseId || extractCourseCode(activity.name);
+        if (!inferredCode) return;
+
+        const existing = templates.get(inferredCode);
+        if (!existing) {
+          templates.set(inferredCode, {
+            courseCode: inferredCode,
+            title: stripCourseCode(activity.name),
+            emoji: activity.emoji || '📘',
+            blocks: [{ dayIndex, activity }],
+          });
+          return;
+        }
+
+        const blockExists = existing.blocks.some(block => (
+          block.dayIndex === dayIndex
+          && block.activity.startTime === activity.startTime
+          && block.activity.endTime === activity.endTime
+          && block.activity.name === activity.name
+        ));
+
+        if (!blockExists) {
+          existing.blocks.push({ dayIndex, activity });
+        }
+
+        if (!existing.title) {
+          existing.title = stripCourseCode(activity.name);
+        }
+        if (!existing.emoji) {
+          existing.emoji = activity.emoji || '📘';
+        }
+      });
+    });
+
     return Array.from(templates.values()).sort((left, right) => left.courseCode.localeCompare(right.courseCode));
-  }, []);
+  }, [schedule]);
 
   const activeCourseCodes = useMemo(() => new Set(courseCards.map(course => course.courseCode)), [courseCards]);
 
@@ -2179,7 +2216,7 @@ export default function App() {
                 initial={{ scale: 0.94, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.94, opacity: 0, y: 20 }}
-                className="paper-card sketch-border w-full max-w-md p-6 bg-white space-y-5"
+                className="sketch-border w-full max-w-md p-6 bg-white border-2 border-slate-900 shadow-[0_22px_64px_rgba(15,23,42,0.35)] space-y-5"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-start gap-3">
