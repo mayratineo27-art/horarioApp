@@ -21,7 +21,7 @@ import {
 dotenv.config({ override: true });
 
 const app = express();
-const PORT = Number(process.env.PORT || 8787);
+const PORT = Number(process.env.PORT || 10000);
 const PUSH_API_TOKEN = process.env.PUSH_API_TOKEN || '';
 const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'anonimo';
 const WINDOWS = [90, 30, 10] as const;
@@ -408,7 +408,7 @@ cron.schedule('0 5 * * 1', async () => {
 app.listen(PORT, async () => {
   try {
     await initializeDatabase();
-    console.log(`Backend listening on http://localhost:${PORT}`);
+    console.log(`Backend listening on port ${PORT}`);
 
     // Keep server awake on Render free tier (ping every 14 minutes)
     const HEALTH_CHECK_URL = process.env.RENDER_EXTERNAL_URL || 'http://localhost:' + PORT;

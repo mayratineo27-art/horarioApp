@@ -6,8 +6,6 @@ services:
     plan: free
     dockerfile: ./Dockerfile
     envVars:
-      - key: PORT
-        value: "8787"
       - key: STORAGE_MODE
         value: "supabase"
       - key: PUSH_API_TOKEN

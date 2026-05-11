@@ -7,7 +7,6 @@ RUN npm ci --include=dev
 
 COPY . .
 
-ENV PORT=8787
-EXPOSE 8787
+EXPOSE 10000
 
 CMD ["npm", "run", "start:server"]
