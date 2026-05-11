@@ -127,10 +127,14 @@ app.post('/api/push/subscribe', async (req, res) => {
     return;
   }
 
+  if (!userId) {
+    res.status(400).json({ ok: false, error: 'userId is required' });
+    return;
+  }
+
   try {
-    // Use userId if provided, otherwise fall back to COURSE_USER_KEY for backward compatibility
-    const userKey = userId || COURSE_USER_KEY;
-    await saveSubscriptionToSupabase(userKey, subscription, timezone || 'America/Santo_Domingo');
+    // Use userId from authenticated frontend
+    await saveSubscriptionToSupabase(userId, subscription, timezone || 'America/Santo_Domingo');
     
     // Also update local config for immediate availability (backward compatibility)
     const config = await loadConfig();
@@ -141,8 +145,8 @@ app.post('/api/push/subscribe', async (req, res) => {
     }
     await saveConfig(config);
     
-    console.log(`[✓] Push subscription registered for user: ${userKey} | timezone: ${config.timezone}`);
-    res.json({ ok: true, message: 'Subscription saved and active for push notifications', userKey });
+    console.log(`[✓] Push subscription registered for user: ${userId} | timezone: ${config.timezone}`);
+    res.json({ ok: true, message: 'Subscription saved and active for push notifications', userKey: userId });
   } catch (error) {
     console.error('Error saving subscription:', error);
     res.status(500).json({ 
@@ -298,8 +302,13 @@ app.put('/api/courses/:courseCode/checklist', async (req, res) => {
     return;
   }
 
+  if (!userId) {
+    res.status(400).json({ ok: false, error: 'userId is required' });
+    return;
+  }
+
   try {
-    await saveCourseChecklist(courseCode, items, !!completed, userId || COURSE_USER_KEY);
+    await saveCourseChecklist(courseCode, items, !!completed, userId);
     res.json({ ok: true });
   } catch (error) {
     console.error('Error saving checklist:', error);

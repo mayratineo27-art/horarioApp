@@ -22,24 +22,24 @@ const COURSE_TABLES = {
 } as const;
 
 const COURSE_COLS = {
-  id: 'identificación',
-  userKey: 'clave_de_usuario',
-  courseCode: 'código_del_curso',
-  name: 'nombre',
-  category: 'categoría',
-  dayOfWeek: 'día_de_la_semana',
-  startTime: 'hora_de_inicio',
-  endTime: 'hora_final',
+  id: 'id',
+  userKey: 'user_key',
+  courseCode: 'course_code',
+  name: 'name',
+  category: 'category',
+  dayOfWeek: 'day_of_week',
+  startTime: 'start_time',
+  endTime: 'end_time',
   esFijo: 'es_fijo',
-  isExercise: 'es_ejercicio',
+  isExercise: 'is_exercise',
   emoji: 'emoji',
-  checklist: 'lista de verificación',
-  customColor: 'color_personalizado',
-  createdAt: 'creado_en',
-  updatedAt: 'actualizado_en',
-  courseId: 'ID del curso',
-  items: 'elementos',
-  completed: 'terminado',
+  checklist: 'checklist',
+  customColor: 'custom_color',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  courseId: 'course_id',
+  items: 'items',
+  completed: 'completed',
 } as const;
 
 export const supabase = USE_SUPABASE ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
@@ -295,7 +295,6 @@ export async function loadCourses(): Promise<CourseRecord[]> {
     const { data: fixedCourses, error: fixedCoursesError } = await supabase
       .from(COURSE_TABLES.fixedCourses)
       .select('*')
-      .eq(COURSE_COLS.userKey, COURSE_USER_KEY)
       .order(COURSE_COLS.courseCode, { ascending: true });
 
     if (fixedCoursesError) throw fixedCoursesError;
@@ -412,7 +411,6 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
       const existingCourse = await supabase
         .from(COURSE_TABLES.fixedCourses)
         .select(COURSE_COLS.id)
-        .eq(COURSE_COLS.userKey, COURSE_USER_KEY)
         .eq(COURSE_COLS.courseCode, course.courseCode)
         .maybeSingle();
 
@@ -436,7 +434,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
         if (error) throw error;
       } else {
         const { data, error } = await supabase.from(COURSE_TABLES.fixedCourses).insert({
-          [COURSE_COLS.userKey]: COURSE_USER_KEY,
+          [COURSE_COLS.userKey]: 'shared',
           [COURSE_COLS.courseCode]: course.courseCode,
           [COURSE_COLS.name]: course.name,
           [COURSE_COLS.category]: course.category,
@@ -456,7 +454,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
       }
 
       const { error: checklistError } = await supabase.from(COURSE_TABLES.courseChecklists).upsert({
-        [COURSE_COLS.userKey]: COURSE_USER_KEY,
+        [COURSE_COLS.userKey]: 'shared',
         [COURSE_COLS.courseId]: courseId,
         [COURSE_COLS.courseCode]: course.courseCode,
         [COURSE_COLS.items]: course.checklist,
@@ -476,7 +474,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
       for (const course of courses) {
         const row: FixedCourseRow = {
           id: store.fixedCourses.find(item => item.course_code === course.courseCode)?.id,
-          user_key: COURSE_USER_KEY,
+          user_key: 'shared',
           course_code: course.courseCode,
           name: course.name,
           category: course.category,
@@ -492,7 +490,7 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
         nextFixedCourses.push(row);
         nextChecklists[course.courseCode] = {
           id: nextChecklists[course.courseCode]?.id,
-          user_key: COURSE_USER_KEY,
+          user_key: 'shared',
           course_code: course.courseCode,
           items: course.checklist,
           completed: course.completed,
@@ -509,8 +507,8 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
   }
 }
 
-export async function saveCourseChecklist(courseCode: string, items: CourseTaskItem[], completed = false, userKey?: string): Promise<void> {
-  const resolvedUserKey = (userKey || COURSE_USER_KEY).trim() || 'anonimo';
+export async function saveCourseChecklist(courseCode: string, items: CourseTaskItem[], completed = false, userKey: string): Promise<void> {
+  const resolvedUserKey = userKey.trim() || 'anonimo';
 
   if (!USE_SUPABASE || !supabase) {
     const store = loadCourseStore();
