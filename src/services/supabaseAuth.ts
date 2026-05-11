@@ -56,9 +56,17 @@ export const convertAuthToUser = (authUser: any): User | null => {
 export const signInWithGoogle = async () => {
   // Prefer canonical app URL when configured to avoid accidental localhost callbacks.
   const configuredAppUrl = (import.meta.env.VITE_APP_URL || '').trim();
-  const redirectUrl = configuredAppUrl || (typeof window !== 'undefined'
-    ? window.location.origin
-    : 'https://horarioapp-ows5.onrender.com');
+  const fallbackAppUrl = 'https://horario-two-blue.vercel.app';
+
+  let redirectUrl = fallbackAppUrl;
+  try {
+    const resolved = new URL(configuredAppUrl || (typeof window !== 'undefined' ? window.location.origin : fallbackAppUrl));
+    if (resolved.hostname !== 'localhost' && resolved.hostname !== '127.0.0.1') {
+      redirectUrl = resolved.origin;
+    }
+  } catch {
+    redirectUrl = fallbackAppUrl;
+  }
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
