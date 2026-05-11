@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { INITIAL_SCHEDULE } from '../src/constants.ts';
 
 dotenv.config({ override: true });
@@ -74,6 +75,10 @@ function getOrCreateSupabaseClient() {
       persistSession: false,
       autoRefreshToken: false,
     },
+    // Node runtimes can miss a global WebSocket constructor for realtime.
+    realtime: {
+      transport: WebSocket as any,
+    } as any,
   });
   return supabase;
 }
