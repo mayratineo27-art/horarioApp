@@ -23,7 +23,7 @@ dotenv.config({ override: true });
 const app = express();
 const PORT = Number(process.env.PORT || 8787);
 const PUSH_API_TOKEN = process.env.PUSH_API_TOKEN || '';
-const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'default-user';
+const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'anonimo';
 const WINDOWS = [90, 30, 10] as const;
 
 function normalizeDay(day: string): string {
@@ -291,7 +291,7 @@ app.put('/api/courses/:courseCode/checklist', async (req, res) => {
   if (!requirePushToken(req, res)) return;
 
   const { courseCode } = req.params;
-  const { items, completed } = req.body as { items?: CourseTaskItem[]; completed?: boolean };
+  const { items, completed, userId } = req.body as { items?: CourseTaskItem[]; completed?: boolean; userId?: string };
 
   if (!Array.isArray(items)) {
     res.status(400).json({ ok: false, error: 'items is required' });
@@ -299,7 +299,7 @@ app.put('/api/courses/:courseCode/checklist', async (req, res) => {
   }
 
   try {
-    await saveCourseChecklist(courseCode, items, !!completed);
+    await saveCourseChecklist(courseCode, items, !!completed, userId || COURSE_USER_KEY);
     res.json({ ok: true });
   } catch (error) {
     console.error('Error saving checklist:', error);

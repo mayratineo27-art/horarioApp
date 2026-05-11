@@ -184,12 +184,12 @@ export async function syncCoursesToBackend(payload: { courses: unknown }) {
   }
 }
 
-export async function saveCourseChecklistToBackend(courseCode: string, items: unknown, completed = false) {
+export async function saveCourseChecklistToBackend(courseCode: string, items: unknown, completed = false, userId?: string) {
   const baseUrl = await getApiBaseUrl();
   const res = await fetch(`${baseUrl}/api/courses/${encodeURIComponent(courseCode)}/checklist`, {
     method: 'PUT',
     headers: await buildHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ items, completed }),
+    body: JSON.stringify({ items, completed, userId }),
   });
 
   if (!res.ok) {

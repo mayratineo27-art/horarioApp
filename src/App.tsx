@@ -345,7 +345,12 @@ export default function App() {
   const persistCourseTasks = async (courseCode: string, nextTasks: CourseTaskItem[]) => {
     setCourseChecklists(prev => ({ ...prev, [courseCode]: nextTasks }));
     try {
-      await saveCourseChecklistToBackend(courseCode, nextTasks, nextTasks.length > 0 && nextTasks.every(task => task.done));
+      await saveCourseChecklistToBackend(
+        courseCode,
+        nextTasks,
+        nextTasks.length > 0 && nextTasks.every(task => task.done),
+        currentUser?.id
+      );
     } catch (error) {
       setNotification({ title: '⚠️ Sincronización pendiente', message: 'Las tareas se guardaron localmente, pero el backend no respondió.', type: 'error' });
       setTimeout(() => setNotification(null), 3500);

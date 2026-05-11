@@ -14,7 +14,7 @@ const USE_SUPABASE = STORAGE_MODE === 'supabase' && !!SUPABASE_URL && !!SUPABASE
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'user-config.json');
 const COURSE_DATA_FILE = path.join(DATA_DIR, 'course-store.json');
-const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'default-user';
+const COURSE_USER_KEY = process.env.COURSE_USER_KEY || 'anonimo';
 
 const COURSE_TABLES = {
   fixedCourses: 'fixed_courses',
@@ -509,13 +509,15 @@ export async function saveCourses(courses: CourseRecord[]): Promise<void> {
   }
 }
 
-export async function saveCourseChecklist(courseCode: string, items: CourseTaskItem[], completed = false): Promise<void> {
+export async function saveCourseChecklist(courseCode: string, items: CourseTaskItem[], completed = false, userKey?: string): Promise<void> {
+  const resolvedUserKey = (userKey || COURSE_USER_KEY).trim() || 'anonimo';
+
   if (!USE_SUPABASE || !supabase) {
     const store = loadCourseStore();
     const fixedCourse = store.fixedCourses.find(course => course.course_code === courseCode);
     store.courseChecklists[courseCode] = {
       id: store.courseChecklists[courseCode]?.id,
-      user_key: COURSE_USER_KEY,
+      user_key: resolvedUserKey,
       course_code: courseCode,
       course_id: fixedCourse?.id,
       items,
@@ -530,7 +532,7 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
     const { data: fixedCourses, error: fixedCourseError } = await supabase
       .from(COURSE_TABLES.fixedCourses)
       .select(COURSE_COLS.id)
-      .eq(COURSE_COLS.userKey, COURSE_USER_KEY)
+      .eq(COURSE_COLS.userKey, resolvedUserKey)
       .eq(COURSE_COLS.courseCode, courseCode)
       .order('updated_at', { ascending: false })
       .limit(1);
@@ -544,7 +546,7 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
     }
 
     const { error } = await supabase.from(COURSE_TABLES.courseChecklists).upsert({
-      [COURSE_COLS.userKey]: COURSE_USER_KEY,
+      [COURSE_COLS.userKey]: resolvedUserKey,
       [COURSE_COLS.courseId]: fixedCourse[COURSE_COLS.id],
       [COURSE_COLS.courseCode]: courseCode,
       [COURSE_COLS.items]: items,
@@ -560,7 +562,7 @@ export async function saveCourseChecklist(courseCode: string, items: CourseTaskI
       const fixedCourse = store.fixedCourses.find(course => course.course_code === courseCode);
       store.courseChecklists[courseCode] = {
         id: store.courseChecklists[courseCode]?.id,
-        user_key: COURSE_USER_KEY,
+        user_key: resolvedUserKey,
         course_code: courseCode,
         course_id: fixedCourse?.id,
         items,
