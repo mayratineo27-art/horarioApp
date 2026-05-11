@@ -172,7 +172,7 @@ export default function App() {
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
   const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
   const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43', '#ffffff'];
-  const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
+  const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, undoActivityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const [conflictModal, setConflictModal] = useState<{ title: string; message: string; suggestion: string; suggestionStart: string; suggestionEnd: string; start: string; end: string; autoMoveMessage?: string } | null>(null);
@@ -1089,8 +1089,28 @@ export default function App() {
   // --- HANDLERS ---
   const markAsCompleted = (activityId: string) => {
     setCompletedToday(prev => ({ ...prev, [activityId]: true }));
-    setNotification({ title: '✅ Quitada', message: 'La actividad salió del horario y ya no bloquea conflictos hoy.', type: 'success' });
+    setNotification({
+      title: '✅ Quitada',
+      message: 'La actividad salió del horario y ya no bloquea conflictos hoy.',
+      undoActivityId: activityId,
+      type: 'success',
+    });
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  const undoCompletedActivity = (activityId: string) => {
+    setCompletedToday(prev => {
+      const copy = { ...prev };
+      delete copy[activityId];
+      return copy;
+    });
+
+    setNotification({
+      title: '↩️ Restaurada',
+      message: 'La actividad volvió al horario.',
+      type: 'info',
+    });
+    setTimeout(() => setNotification(null), 2500);
   };
 
   const handleEnableNotifications = async () => {
@@ -2239,6 +2259,14 @@ export default function App() {
               <div className="flex-1">
                 <p className="font-hand text-lg sm:text-xl font-extrabold leading-tight text-white drop-shadow-md">{notification.title}</p>
                 <p className="text-base sm:text-lg text-white font-semibold drop-shadow-sm">{notification.message}</p>
+                {notification.undoActivityId && (
+                  <button
+                    onClick={() => undoCompletedActivity(notification.undoActivityId!)}
+                    className="mt-2 px-3 py-1 rounded-lg border-2 border-white bg-white/20 text-white font-black text-sm"
+                  >
+                    Deshacer
+                  </button>
+                )}
               </div>
               <button 
                 onClick={() => setNotification(null)} 
