@@ -1,11 +1,11 @@
-self.addEventListener('install', () => {
-  // Activate the new worker without waiting
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+  // Keep the existing worker until the browser activates the update naturally.
+  event.waitUntil(Promise.resolve());
 });
 
 self.addEventListener('activate', (event) => {
-  // Take control of all clients without reloading pages
-  event.waitUntil(self.clients.claim());
+  // Do not claim clients here to avoid forcing a page refresh.
+  event.waitUntil(Promise.resolve());
 });
 
 /**
