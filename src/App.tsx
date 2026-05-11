@@ -62,7 +62,7 @@ import {
   getActivityStatus,
   shouldDimActivity,
 } from './utils/activityHelpers';
-import { onAuthStateChange, signOut, User as SupabaseUser } from './services/supabaseAuth';
+import { onAuthStateChange, signOut, User as SupabaseUser, supabase } from './services/supabaseAuth';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { Onboarding } from './components/Onboarding';
 import {
@@ -176,6 +176,7 @@ export default function App() {
   // --- AUTH STATE ---
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
 
@@ -373,6 +374,40 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        // First, check current session without causing visible re-render
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setCurrentUser(session.user as SupabaseUser);
+          setIsLoadingUserData(true);
+          try {
+            const userSettings = await loadUserSettingsFromSupabase(session.user.id);
+            const userSchedule = await loadUserScheduleFromSupabase(session.user.id);
+
+            // Local fallback: if backend missing the flag, allow a persisted local value
+            const localOnboardingFlag = typeof window !== 'undefined' && localStorage.getItem('mya_onboarding_completed') === '1';
+
+            // Check if user needs onboarding. If either backend says completed or local flag exists, skip onboarding.
+            const needsOnboarding = !(userSettings?.onboarding_completed || localOnboardingFlag);
+
+            if (needsOnboarding) {
+              setShowOnboarding(true);
+            } else if (userSchedule) {
+              // Load user's schedule from Supabase and apply weekly exceptions
+              const weekKey = `${new Date().getFullYear()}-${String(Math.floor((new Date().getTime() - new Date(new Date().getFullYear(), 0, 4).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1).padStart(2, '0')}`;
+              const scheduleWithExceptions = await applyWeeklyExceptionsToSchedule(session.user.id, userSchedule, weekKey);
+              setSchedule(scheduleWithExceptions);
+            }
+          } catch (error) {
+            console.error('Error loading user data:', error);
+          } finally {
+            setIsLoadingUserData(false);
+          }
+        }
+
+        // Mark auth as ready BEFORE subscribing to changes
+        setAuthReady(true);
+
+        // Now listen for auth state changes
         const unsubscribe = onAuthStateChange(async (user, event) => {
           // Only process meaningful auth state changes to prevent unnecessary re-renders
           // Ignore TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION which can occur on tab focus
@@ -415,6 +450,7 @@ export default function App() {
         return unsubscribe;
       } catch (error) {
         console.error('Auth error:', error);
+        setAuthReady(true); // Mark as ready even on error
         setIsAuthLoading(false);
       }
     };
@@ -1054,6 +1090,12 @@ export default function App() {
   // Show loading or welcome screen if not authenticated
   if (isAuthLoading) {
     return <WelcomeScreen isLoading={true} />;
+  }
+
+  // Wait for initial auth check before rendering anything
+  // This prevents flashing/flickering when Supabase checks session
+  if (!authReady) {
+    return null;
   }
 
   if (!currentUser) {
