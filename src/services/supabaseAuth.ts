@@ -95,13 +95,13 @@ export const signOut = async () => {
 /**
  * Listen to authentication state changes
  */
-export const onAuthStateChange = (callback: (user: User | null) => void) => {
+export const onAuthStateChange = (callback: (user: User | null, event?: string) => void) => {
   const {
     data: { subscription },
-  } = supabase.auth.onAuthStateChange(async (_event, session) => {
+  } = supabase.auth.onAuthStateChange(async (event, session) => {
     const user = session?.user;
     const convertedUser = convertAuthToUser(user);
-    callback(convertedUser);
+    callback(convertedUser, event);
   });
 
   return subscription;

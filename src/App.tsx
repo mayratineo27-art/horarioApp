@@ -373,7 +373,13 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const unsubscribe = onAuthStateChange(async (user) => {
+        const unsubscribe = onAuthStateChange(async (user, event) => {
+          // Only process meaningful auth state changes to prevent unnecessary re-renders
+          // Ignore TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION which can occur on tab focus
+          if (event && !['SIGNED_IN', 'SIGNED_OUT'].includes(event)) {
+            return;
+          }
+
           setCurrentUser(user);
 
           // Load user data from Supabase
