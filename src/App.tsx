@@ -62,7 +62,7 @@ import {
   getActivityStatus,
   shouldDimActivity,
 } from './utils/activityHelpers';
-import { onAuthStateChange, signOut, User as SupabaseUser, supabase } from './services/supabaseAuth';
+import { onAuthStateChange, signOut, User as SupabaseUser, supabase, convertAuthToUser } from './services/supabaseAuth';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { Onboarding } from './components/Onboarding';
 import {
@@ -382,7 +382,8 @@ export default function App() {
         // First, check current session without causing visible re-render
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          setCurrentUser(session.user as SupabaseUser);
+          const converted = convertAuthToUser(session.user);
+          setCurrentUser(converted);
           setIsLoadingUserData(true);
           try {
             const userSettings = await loadUserSettingsFromSupabase(session.user.id);
