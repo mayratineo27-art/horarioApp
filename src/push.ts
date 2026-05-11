@@ -22,26 +22,18 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 async function getApiBaseUrl() {
   const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env || {};
-  const configured = env.VITE_API_BASE_URL || '';
-  if (configured) return configured;
+  
+  // 1. Check if explicitly configured in .env (VITE_API_BASE_URL)
+  if (env.VITE_API_BASE_URL) {
+    return env.VITE_API_BASE_URL;
+  }
 
-  // In production (Vercel), use Render backend. In development, use relative /api which proxies to localhost:8787
+  // 2. In development (localhost), use local backend
   if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-    // Development: use relative path which will be proxied by Vite
     return 'http://localhost:8787';
   }
 
-  // Production: use Render backend or API rewrite in Vercel
-  // For Vercel with rewrite, use /api; otherwise use full Render URL
-  if (typeof window !== 'undefined' && (
-    window.location.hostname.includes('vercel.app') ||
-    window.location.hostname.includes('vercel.com')
-  )) {
-    // On Vercel: use relative /api which Vercel will rewrite to Render
-    return window.location.origin;  // Will resolve /api to same origin, Vercel rewrites it
-  }
-
-  // Default: use Render backend
+  // 3. Default to Render backend for production (Vercel, etc)
   return 'https://horarioapp-ows5.onrender.com';
 }
 
