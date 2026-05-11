@@ -10,7 +10,7 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
 const SUPABASE_ANON_KEY = (process.env.SUPABASE_ANON_KEY || '').trim();
 const STORAGE_MODE = (process.env.STORAGE_MODE || (SUPABASE_URL && SUPABASE_ANON_KEY ? 'supabase' : 'local')).toLowerCase();
 const SUPABASE_CONFIGURED = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
-const USE_SUPABASE = SUPABASE_CONFIGURED && STORAGE_MODE !== 'local';
+const USE_SUPABASE = SUPABASE_CONFIGURED;
 
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'user-config.json');
@@ -50,8 +50,8 @@ try {
     supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch (error) {
-  console.error('Supabase client init failed, falling back to local storage:', error);
-  supabase = null;
+  console.error('Supabase client init failed:', error);
+  throw error;
 }
 
 function ensureDataFile() {
@@ -121,6 +121,10 @@ export async function initializeDatabase() {
     console.log('✓ Local storage mode enabled (server/data/user-config.json)');
     console.log(`Storage diagnostics: STORAGE_MODE=${STORAGE_MODE}, SUPABASE_URL=${SUPABASE_URL ? 'set' : 'missing'}, SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY ? 'set' : 'missing'}`);
     return;
+  }
+
+  if (!supabase) {
+    throw new Error('Supabase is configured but the client could not be initialized. Check SUPABASE_URL and SUPABASE_ANON_KEY.');
   }
 
   console.log('✓ Supabase client initialized');
