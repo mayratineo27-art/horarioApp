@@ -1,6 +1,17 @@
 -- BLOQUE 2: Create Supabase tables for user data migration
 -- Run this in Supabase SQL Editor: https://app.supabase.com/project/pxwurgeoqiygcyggummh/sql/new
 
+-- 0. User Configs Table (for push subscriptions and backward compatibility)
+-- Stores push subscriptions and timezone info using user_key as identifier
+CREATE TABLE IF NOT EXISTS public.user_configs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_key TEXT NOT NULL UNIQUE,
+  subscription JSONB,
+  timezone TEXT DEFAULT 'America/Santo_Domingo',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 1. User Schedules Table
 -- Stores the weekly schedule for each user
 CREATE TABLE IF NOT EXISTS public.user_schedules (
