@@ -920,7 +920,25 @@ export default function App() {
     }
   };
 
-  const handleSaveActivity = (options?: { ignoreConflict?: boolean }) => {
+  const guardarHorario = async (nuevoHorario: DaySchedule[]) => {
+    setSchedule(nuevoHorario);
+
+    if (!currentUser?.id) return;
+
+    try {
+      await saveUserScheduleToSupabase(
+        currentUser.id,
+        nuevoHorario,
+        Intl.DateTimeFormat().resolvedOptions().timeZone
+      );
+
+      console.log('Horario guardado en Supabase');
+    } catch (err) {
+      console.error('Error inesperado al guardar horario:', err);
+    }
+  };
+
+  const handleSaveActivity = async (options?: { ignoreConflict?: boolean }) => {
     const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
     const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
     const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
@@ -997,58 +1015,54 @@ export default function App() {
       isWeekly: aplicarTodaSemana,
     };
 
-    setSchedule(prev => {
-      const nextSchedule = prev.map(day => ({ ...day, activities: [...day.activities] }));
+    const nextSchedule = schedule.map(day => ({ ...day, activities: [...day.activities] }));
 
-      const applyToDay = (activities: Activity[], dayIndex: number) => {
-        const nextActivities = [...activities];
-        const isEditingCurrent = showEditor?.mode === 'edit' && showEditor.activityId && dayIndex === activeDayIndex;
-        const targetId = isEditingCurrent
-          ? showEditor.activityId!
-          : `${baseActivity.id}-${dayIndex}`;
+    const applyToDay = (activities: Activity[], dayIndex: number) => {
+      const nextActivities = [...activities];
+      const isEditingCurrent = showEditor?.mode === 'edit' && showEditor.activityId && dayIndex === activeDayIndex;
+      const targetId = isEditingCurrent
+        ? showEditor.activityId!
+        : `${baseActivity.id}-${dayIndex}`;
 
-        const targetActivity: Activity = {
-          ...baseActivity,
-          id: targetId,
-          courseId: baseActivity.courseId || targetId,
+      const targetActivity: Activity = {
+        ...baseActivity,
+        id: targetId,
+        courseId: baseActivity.courseId || targetId,
+        isWeekly: aplicarTodaSemana,
+      };
+
+      const existingIndex = isEditingCurrent
+        ? nextActivities.findIndex(activity => activity.id === showEditor.activityId)
+        : nextActivities.findIndex(activity => sameActivitySignature(activity, targetActivity.name, targetActivity.startTime, targetActivity.endTime));
+
+      if (existingIndex >= 0) {
+        nextActivities[existingIndex] = {
+          ...nextActivities[existingIndex],
+          ...targetActivity,
+          id: nextActivities[existingIndex].id,
           isWeekly: aplicarTodaSemana,
         };
-
-        const existingIndex = isEditingCurrent
-          ? nextActivities.findIndex(activity => activity.id === showEditor.activityId)
-          : nextActivities.findIndex(activity => sameActivitySignature(activity, targetActivity.name, targetActivity.startTime, targetActivity.endTime));
-
-        if (existingIndex >= 0) {
-          nextActivities[existingIndex] = {
-            ...nextActivities[existingIndex],
-            ...targetActivity,
-            id: nextActivities[existingIndex].id,
-            isWeekly: aplicarTodaSemana,
-          };
-        } else {
-          nextActivities.push(targetActivity);
-        }
-
-        const sortedActivities = nextActivities.sort((left, right) => left.startTime.localeCompare(right.startTime));
-        return options?.ignoreConflict && dayIndex === activeDayIndex
-          ? pushActivitiesForward(sortedActivities, targetActivity)
-          : sortedActivities;
-      };
-
-      if (aplicarTodaSemana) {
-        return nextSchedule.map((day, dayIndex) => ({
-          ...day,
-          activities: applyToDay(day.activities, dayIndex),
-        }));
+      } else {
+        nextActivities.push(targetActivity);
       }
 
-      nextSchedule[activeDayIndex] = {
-        ...nextSchedule[activeDayIndex],
-        activities: applyToDay(nextSchedule[activeDayIndex].activities, activeDayIndex),
-      };
+      const sortedActivities = nextActivities.sort((left, right) => left.startTime.localeCompare(right.startTime));
+      return options?.ignoreConflict && dayIndex === activeDayIndex
+        ? pushActivitiesForward(sortedActivities, targetActivity)
+        : sortedActivities;
+    };
 
-      return nextSchedule;
-    });
+    const nuevoHorario = aplicarTodaSemana
+      ? nextSchedule.map((day, dayIndex) => ({
+          ...day,
+          activities: applyToDay(day.activities, dayIndex),
+        }))
+      : nextSchedule.map((day, dayIndex) => dayIndex === activeDayIndex
+          ? { ...day, activities: applyToDay(day.activities, dayIndex) }
+          : day
+        );
+
+    await guardarHorario(nuevoHorario);
 
     setNotification({ 
       title: showEditor?.mode === 'edit' ? '✅ Actualizado' : '✅ Añadida', 
@@ -2087,10 +2101,10 @@ export default function App() {
                         const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
                         const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
                         
-                        setSchedule(prev => {
-                          const copy = [...prev];
-                          let activities = [...copy[activeDayIndex].activities];
-                          activities = activities.map(a => 
+                        const nextSchedule = schedule.map((day, dayIndex) => {
+                          if (dayIndex !== activeDayIndex) return day;
+
+                          const activities = day.activities.map(a => 
                             a.id === showEditor?.activityId
                               ? { 
                                   ...a, 
@@ -2105,11 +2119,11 @@ export default function App() {
                                   activityType: editorData.activityType
                                 } 
                               : a
-                          );
-                          activities.sort((a, b) => a.startTime.localeCompare(b.startTime));
-                          copy[activeDayIndex] = { ...copy[activeDayIndex], activities };
-                          return copy;
+                          ).sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+                          return { ...day, activities };
                         });
+                        void guardarHorario(nextSchedule);
                         
                         const modifiedData = {
                           startTime: start,
@@ -2142,7 +2156,7 @@ export default function App() {
                       });
                       setAdjustableActivityModal(null);
                       // Trigger handleSaveActivity which will now skip the modal check
-                      setTimeout(() => handleSaveActivity(), 0);
+                      setTimeout(() => { void handleSaveActivity(); }, 0);
                     }}
                     className="py-3 rounded-xl border-2 border-indigo-900 bg-indigo-900 font-bold text-white hover:bg-indigo-950 transition"
                   >
