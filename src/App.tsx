@@ -466,6 +466,40 @@ export default function App() {
 
   const selectedCourseTasks = selectedCourse ? (courseChecklists[selectedCourse.courseCode] || selectedCourse.checklist || []) : [];
 
+  const findCourseActivity = (courseCode: string) => {
+    for (let dayIndex = 0; dayIndex < schedule.length; dayIndex += 1) {
+      const day = schedule[dayIndex];
+      const activity = day.activities.find(item => {
+        const itemCode = (item.courseId || extractCourseCode(item.name) || '').toUpperCase();
+        return itemCode === courseCode.toUpperCase();
+      });
+
+      if (activity) {
+        return { dayIndex, activity };
+      }
+    }
+
+    return null;
+  };
+
+  const handleEditCourse = (courseCode: string) => {
+    const found = findCourseActivity(courseCode);
+    if (!found) {
+      setNotification({
+        title: '⚠️ Curso no encontrado',
+        message: `No encontramos ${courseCode} en el horario para editar.`,
+        type: 'error',
+      });
+      setTimeout(() => setNotification(null), 2800);
+      return;
+    }
+
+    setDrawerView('horario');
+    setSelectedCourseCode(null);
+    setActiveDayIndex(found.dayIndex);
+    setTimeout(() => openEditor('edit', found.activity), 0);
+  };
+
   const handleRemoveCourseFromSchedule = async (courseCode: string) => {
     const nextSchedule = schedule.map(day => ({
       ...day,
@@ -1322,16 +1356,6 @@ export default function App() {
 
   const openEditor = (mode: 'add' | 'edit', activity?: Activity) => {
     if (mode === 'edit' && activity) {
-      // Check if activity is FIJA_PERMANENTE - restrict editing time
-      if (activity.activityType === ActivityType.FIJA_PERMANENTE) {
-        setNotification({
-          title: '🔒 No editable',
-          message: 'Este es un curso fijo. Solo puedes marcarlo como completado.',
-          type: 'info',
-        });
-        return;
-      }
-
       setEditorData({
         name: activity.name,
         start: activity.startTime,
@@ -1736,6 +1760,12 @@ export default function App() {
 
                       <div className="mt-3 flex items-center justify-end gap-2">
                         <button
+                          onClick={() => handleEditCourse(course.courseCode)}
+                          className="rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700"
+                        >
+                          Editar
+                        </button>
+                        <button
                           onClick={() => setSelectedCourseCode(course.courseCode)}
                           className="rounded-xl border-2 border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700"
                         >
@@ -1958,6 +1988,12 @@ export default function App() {
 
                 <div className="mt-5 flex gap-3">
                   <button
+                    onClick={() => handleEditCourse(selectedCourse.courseCode)}
+                    className="flex-1 rounded-2xl border-2 border-amber-300 bg-amber-50 px-4 py-3 font-black text-amber-700"
+                  >
+                    Editar curso
+                  </button>
+                  <button
                     onClick={() => { void handleRemoveCourseFromSchedule(selectedCourse.courseCode); }}
                     className="flex-1 rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 font-black text-rose-700"
                   >
@@ -2112,7 +2148,7 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-xs text-slate-500 mt-2 px-2">
-                      {editorData.activityType === ActivityType.FIJA_PERMANENTE && '🔒 No se puede editar hora'}
+                      {editorData.activityType === ActivityType.FIJA_PERMANENTE && '🔒 Curso fijo (editable)'}
                       {editorData.activityType === ActivityType.FIJA_AJUSTABLE && '🔓 Permite cambios semanales'}
                       {editorData.activityType === ActivityType.FLEXIBLE && '✏️ Editable sin restricciones'}
                     </p>
