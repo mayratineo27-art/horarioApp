@@ -171,7 +171,17 @@ export default function App() {
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [scheduleSyncStatus, setScheduleSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
-  const [editorData, setEditorData] = useState({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
+  const [editorData, setEditorData] = useState({
+    name: '',
+    start: '12:00',
+    end: '13:00',
+    emoji: '📍',
+    isCourseMarked: false,
+    customColor: '',
+    activityType: ActivityType.FLEXIBLE,
+    isWeekly: false,
+    notificationConfig: { enabled: true, minutesBefore: [90, 30, 10], sound: 'default' as const },
+  });
   const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43', '#ffffff'];
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, undoActivityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1233,6 +1243,17 @@ export default function App() {
         Intl.DateTimeFormat().resolvedOptions().timeZone
       );
 
+      // Force backend to re-sync scheduled notifications for immediate availability
+      try {
+        await scheduleNewNotification({
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          schedule: nuevoHorario,
+          userId: currentUser.id,
+        });
+      } catch (err) {
+        console.warn('Warning: schedule re-sync failed:', err);
+      }
+
       console.log('Horario guardado en Supabase');
       setScheduleSyncStatus('saved');
       setTimeout(() => setScheduleSyncStatus('idle'), 2000);
@@ -1383,6 +1404,7 @@ export default function App() {
       customColor: chosenColor,
       activityType: editorData.activityType,
       isWeekly: aplicarTodaSemana,
+      notificationConfig: editorData.notificationConfig || { enabled: true, minutesBefore: [90,30,10], sound: 'default' },
     };
 
     const nextSchedule = schedule.map(day => ({ ...day, activities: [...day.activities] }));
@@ -1399,6 +1421,7 @@ export default function App() {
         id: targetId,
         courseId: baseActivity.courseId || targetId,
         isWeekly: aplicarTodaSemana,
+        notificationConfig: baseActivity.notificationConfig,
       };
 
       const existingIndex = isEditingCurrent
@@ -1481,12 +1504,23 @@ export default function App() {
         customColor: activity.customColor || '',
         activityType: activity.activityType || ActivityType.FLEXIBLE,
         isWeekly: !!activity.isWeekly,
+        notificationConfig: activity.notificationConfig || { enabled: true, minutesBefore: [90,30,10], sound: 'default' },
       });
       setAplicarTodaSemana(!!activity.isWeekly);
       setChecklistText((activity.checklist || []).join('\n'));
       setShowEditor({ mode: 'edit', activityId: activity.id });
     } else {
-      setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE[0], activityType: ActivityType.FLEXIBLE, isWeekly: false });
+      setEditorData({
+        name: '',
+        start: '12:00',
+        end: '13:00',
+        emoji: '📍',
+        isCourseMarked: false,
+        customColor: DEFAULT_PALETTE[0],
+        activityType: ActivityType.FLEXIBLE,
+        isWeekly: false,
+        notificationConfig: { enabled: true, minutesBefore: [90, 30, 10], sound: 'default' },
+      });
       setAplicarTodaSemana(false);
       setChecklistText('');
       setShowEditor({ mode: 'add' });
@@ -2320,6 +2354,73 @@ export default function App() {
                         />
                       ))}
                     </div>
+                  </div>
+
+                  {/* Notification settings per activity */}
+                  <div className="mt-4 p-4 border-2 border-slate-200 rounded-lg bg-white">
+                    <label className="text-sm font-black text-slate-800">🔔 Notificaciones</label>
+                    <div className="mt-2 flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={!!editorData.notificationConfig?.enabled}
+                        onChange={(e) => setEditorData(prev => ({ ...prev, notificationConfig: { ...(prev.notificationConfig || {}), enabled: e.target.checked } }))}
+                        className="w-5 h-5 accent-indigo-700"
+                        id="notifEnabled"
+                      />
+                      <label htmlFor="notifEnabled" className="text-sm font-bold text-slate-700">Recibir notificaciones</label>
+                    </div>
+
+                    {editorData.notificationConfig?.enabled && (
+                      <div className="mt-3 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <label className="text-sm font-semibold">Ventanas:</label>
+                          {[90,30,10].map((w) => (
+                            <label key={w} className="inline-flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Array.isArray(editorData.notificationConfig?.minutesBefore) && (editorData.notificationConfig!.minutesBefore!.includes(w))}
+                                onChange={(e) => {
+                                  const existing = Array.isArray(editorData.notificationConfig?.minutesBefore) ? [...editorData.notificationConfig!.minutesBefore!] : [];
+                                  const next = e.target.checked ? Array.from(new Set([...existing, w])) : existing.filter(x => x !== w);
+                                  setEditorData(prev => ({ ...prev, notificationConfig: { ...(prev.notificationConfig || {}), minutesBefore: next } }));
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-xs">{w} min</span>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-semibold">Agregar minutos personalizados (coma-separados)</label>
+                          <input
+                            type="text"
+                            placeholder="Ej: 60,45"
+                            className="w-full mt-2 p-2 border-2 rounded-lg"
+                            value={(editorData.notificationConfig?.minutesBefore || []).filter(n => ![90,30,10].includes(n)).join(',')}
+                            onChange={(e) => {
+                              const raw = e.target.value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n>0);
+                              const base = (editorData.notificationConfig?.minutesBefore || []).filter(n => [90,30,10].includes(n));
+                              setEditorData(prev => ({ ...prev, notificationConfig: { ...(prev.notificationConfig || {}), minutesBefore: Array.from(new Set([...base, ...raw])) } }));
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-semibold">Sonido</label>
+                          <select
+                            value={editorData.notificationConfig?.sound || 'default'}
+                            onChange={(e) => setEditorData(prev => ({ ...prev, notificationConfig: { ...(prev.notificationConfig || {}), sound: e.target.value as any } }))}
+                            className="w-full mt-2 p-2 border-2 rounded-lg"
+                          >
+                            <option value="default">Normal</option>
+                            <option value="gentle">Suave</option>
+                            <option value="urgent">Urgente</option>
+                            <option value="none">Sin sonido</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

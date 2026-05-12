@@ -361,10 +361,19 @@ cron.schedule('* * * * *', async () => {
     let changed = false;
 
     for (const activity of today.activities) {
+      // Respect per-activity notification configuration (enabled/minutesBefore)
+      if (activity.notificationConfig && activity.notificationConfig.enabled === false) {
+        continue;
+      }
+
+      const minutesList = (activity.notificationConfig && Array.isArray(activity.notificationConfig.minutesBefore) && activity.notificationConfig.minutesBefore.length > 0)
+        ? activity.notificationConfig.minutesBefore
+        : WINDOWS;
+
       const startTotal = toTotalMinutes(activity.startTime);
       const diff = startTotal - nowTotal;
 
-      for (const win of WINDOWS) {
+      for (const win of minutesList) {
         const key = `${activity.id}_${win}`;
         if (diff !== win || sentMap[key]) {
           continue;

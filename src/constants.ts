@@ -31,6 +31,11 @@ export interface Activity {
   courseId?: string;
   checklist?: string[];
   isWeekly?: boolean;
+  notificationConfig?: {
+    enabled?: boolean;
+    minutesBefore?: number[];
+    sound?: 'default' | 'gentle' | 'urgent' | 'none';
+  };
 }
 
 export interface DaySchedule {
