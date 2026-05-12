@@ -225,8 +225,24 @@ export default function App() {
   const [reminderMorningTime, setReminderMorningTime] = useState('08:00');
   const [reminderAfternoonTime, setReminderAfternoonTime] = useState('15:00');
   const [reminderEveningTime, setReminderEveningTime] = useState('18:00');
+  const [reminderConfigDirty, setReminderConfigDirty] = useState(false);
 
-  const guardarHoraRecordatorio = async (tipo: 'morning' | 'afternoon' | 'evening', hora: string, activo: boolean) => {
+  const guardarConfiguracionRecordatorios = async () => {
+    if (!currentUser?.id) return;
+
+    await saveUserSettingsToSupabase(currentUser.id, {
+      reminder_morning: reminderMorningTime,
+      reminder_afternoon: reminderAfternoonTime,
+      reminder_evening: reminderEveningTime,
+      reminder_morning_enabled: reminderMorningEnabled,
+      reminder_afternoon_enabled: reminderAfternoonEnabled,
+      reminder_evening_enabled: reminderEveningEnabled,
+    });
+
+    setReminderConfigDirty(false);
+  };
+
+  const actualizarRecordatorioLocal = (tipo: 'morning' | 'afternoon' | 'evening', hora: string, activo: boolean) => {
     if (tipo === 'morning') {
       setReminderMorningTime(hora);
       setReminderMorningEnabled(activo);
@@ -237,15 +253,7 @@ export default function App() {
       setReminderEveningTime(hora);
       setReminderEveningEnabled(activo);
     }
-
-    if (!currentUser?.id) return;
-
-    const payload = {
-      [`reminder_${tipo}`]: hora,
-      [`reminder_${tipo}_enabled`]: activo,
-    } as Record<string, string | boolean>;
-
-    await saveUserSettingsToSupabase(currentUser.id, payload as any);
+    setReminderConfigDirty(true);
   };
 
   const parseMinutes = (value: string) => {
@@ -755,6 +763,7 @@ export default function App() {
             setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? true);
             setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? true);
             setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? true);
+            setReminderConfigDirty(false);
             const userSchedule = await loadUserScheduleFromSupabase(session.user.id);
 
             const needsOnboarding = !userSettings?.onboarding_completed;
@@ -798,6 +807,7 @@ export default function App() {
               setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? true);
               setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? true);
               setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? true);
+              setReminderConfigDirty(false);
               const userSchedule = await loadUserScheduleFromSupabase(user.id);
 
               const needsOnboarding = !userSettings?.onboarding_completed;
@@ -1839,13 +1849,9 @@ export default function App() {
                           type="button"
                           role="switch"
                           aria-checked={item.enabled}
-                          onClick={async () => {
+                          onClick={() => {
                             const nextEnabled = !item.enabled;
-                            try {
-                              await guardarHoraRecordatorio(item.key as 'morning' | 'afternoon' | 'evening', item.time, nextEnabled);
-                            } catch (err) {
-                              console.error('Error saving reminder toggle:', err);
-                            }
+                            actualizarRecordatorioLocal(item.key as 'morning' | 'afternoon' | 'evening', item.time, nextEnabled);
                           }}
                           className={`relative inline-flex h-8 w-14 items-center rounded-full border-2 transition ${item.enabled ? 'bg-emerald-400 border-emerald-600' : 'bg-slate-200 border-slate-400'}`}
                         >
@@ -1855,18 +1861,32 @@ export default function App() {
                       <input
                         type="time"
                         value={item.time}
-                        onChange={async (e) => {
+                        onChange={(e) => {
                           const nextTime = e.target.value;
-                          try {
-                            await guardarHoraRecordatorio(item.key as 'morning' | 'afternoon' | 'evening', nextTime, item.enabled);
-                          } catch (err) {
-                            console.error('Error saving reminder time:', err);
-                          }
+                          actualizarRecordatorioLocal(item.key as 'morning' | 'afternoon' | 'evening', nextTime, item.enabled);
                         }}
                         className="w-full rounded-xl border-2 border-slate-300 bg-white px-3 py-2 font-mono text-sm"
                       />
                     </div>
                   ))}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await guardarConfiguracionRecordatorios();
+                        setNotification({ title: '✅ Guardado', message: 'Los recordatorios se guardaron en Supabase.', type: 'success' });
+                        setTimeout(() => setNotification(null), 3000);
+                      } catch (err) {
+                        console.error('Error saving reminder settings:', err);
+                        setNotification({ title: '⚠️ Error', message: 'No se pudieron guardar los recordatorios.', type: 'error' });
+                        setTimeout(() => setNotification(null), 4000);
+                      }
+                    }}
+                    className="w-full rounded-2xl border-2 border-indigo-900 bg-indigo-900 text-white p-3 font-black transition hover:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!reminderConfigDirty}
+                  >
+                    {reminderConfigDirty ? 'Guardar recordatorios' : 'Recordatorios guardados'}
+                  </button>
                 </div>
                 </>
               )}
