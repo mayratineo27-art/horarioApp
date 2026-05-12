@@ -46,6 +46,7 @@ import {
   syncSubscriptionToBackend,
   sendTestPush,
   syncNotificationHours,
+  syncReminderSettingsToBackend,
   scheduleNewNotification,
   loadCoursesFromBackend,
   syncCoursesToBackend,
@@ -228,7 +229,7 @@ export default function App() {
   const [reminderConfigDirty, setReminderConfigDirty] = useState(false);
 
   const guardarConfiguracionRecordatorios = async (): Promise<boolean> => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id) return false;
 
     const payload = {
       reminder_morning: reminderMorningTime,
@@ -240,11 +241,11 @@ export default function App() {
     };
 
     try {
-      await saveUserSettingsToSupabase(currentUser.id, payload);
+      await syncReminderSettingsToBackend({ userId: currentUser.id, ...payload });
       setReminderConfigDirty(false);
       return true;
     } catch (error) {
-      console.error('Error saving reminder settings to Supabase:', error);
+      console.error('Error saving reminder settings to backend:', error);
       setReminderConfigDirty(true);
       return false;
     }

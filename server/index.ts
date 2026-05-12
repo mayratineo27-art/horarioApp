@@ -11,6 +11,7 @@ import {
   saveCourses,
   saveCourseChecklist,
   saveSubscriptionToSupabase,
+  saveUserSettings,
   updateLastResetDate,
   type DaySchedule,
   type CourseRecord,
@@ -251,6 +252,56 @@ app.post('/api/push/notification-hours', async (req, res) => {
   } catch (error) {
     console.error('Error saving notification hours:', error);
     res.status(500).json({ ok: false, error: 'Failed to save notification hours' });
+  }
+});
+
+app.post('/api/push/reminder-settings', async (req, res) => {
+  if (!requirePushToken(req, res)) {
+    return;
+  }
+
+  const {
+    userId,
+    reminder_morning,
+    reminder_afternoon,
+    reminder_evening,
+    reminder_morning_enabled,
+    reminder_afternoon_enabled,
+    reminder_evening_enabled,
+  } = req.body as {
+    userId?: string;
+    reminder_morning?: string;
+    reminder_afternoon?: string;
+    reminder_evening?: string;
+    reminder_morning_enabled?: boolean;
+    reminder_afternoon_enabled?: boolean;
+    reminder_evening_enabled?: boolean;
+  };
+
+  if (!userId) {
+    res.status(400).json({ ok: false, error: 'userId is required' });
+    return;
+  }
+
+  try {
+    await saveUserSettings(userId, {
+      reminder_morning,
+      reminder_afternoon,
+      reminder_evening,
+      reminder_morning_enabled,
+      reminder_afternoon_enabled,
+      reminder_evening_enabled,
+    });
+
+    console.log(`[✓] Reminder settings saved for user: ${userId}`);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[✗] Error saving reminder settings in Supabase:', error);
+    res.status(500).json({
+      ok: false,
+      error: 'Failed to save reminder settings',
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 

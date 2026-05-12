@@ -133,6 +133,29 @@ export async function syncNotificationHours(notificationHourStart: number, notif
   }
 }
 
+export async function syncReminderSettingsToBackend(payload: {
+  userId?: string;
+  reminder_morning: string;
+  reminder_afternoon: string;
+  reminder_evening: string;
+  reminder_morning_enabled: boolean;
+  reminder_afternoon_enabled: boolean;
+  reminder_evening_enabled: boolean;
+}) {
+  const baseUrl = await getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/push/reminder-settings`, {
+    method: 'POST',
+    headers: await buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('[Push] Reminder settings backend error:', errorText);
+    throw new Error('No se pudieron guardar los recordatorios en backend.');
+  }
+}
+
 export async function syncScheduleToBackend(payload: { timezone: string; schedule: unknown; userId?: string }) {
   const baseUrl = await getApiBaseUrl();
   await fetch(`${baseUrl}/api/push/schedule`, {
