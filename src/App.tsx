@@ -227,19 +227,59 @@ export default function App() {
   const [reminderEveningTime, setReminderEveningTime] = useState('18:00');
   const [reminderConfigDirty, setReminderConfigDirty] = useState(false);
 
-  const guardarConfiguracionRecordatorios = async () => {
+  const reminderConfigStorageKey = currentUser?.id ? `mya_reminder_config_${currentUser.id}` : null;
+
+  const persistReminderConfigLocally = (config: {
+    reminder_morning: string;
+    reminder_afternoon: string;
+    reminder_evening: string;
+    reminder_morning_enabled: boolean;
+    reminder_afternoon_enabled: boolean;
+    reminder_evening_enabled: boolean;
+  }) => {
+    if (!reminderConfigStorageKey || typeof window === 'undefined') return;
+    localStorage.setItem(reminderConfigStorageKey, JSON.stringify(config));
+  };
+
+  const readReminderConfigLocally = (): {
+    reminder_morning?: string;
+    reminder_afternoon?: string;
+    reminder_evening?: string;
+    reminder_morning_enabled?: boolean;
+    reminder_afternoon_enabled?: boolean;
+    reminder_evening_enabled?: boolean;
+  } | null => {
+    if (!reminderConfigStorageKey || typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(reminderConfigStorageKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const guardarConfiguracionRecordatorios = async (): Promise<boolean> => {
     if (!currentUser?.id) return;
 
-    await saveUserSettingsToSupabase(currentUser.id, {
+    const payload = {
       reminder_morning: reminderMorningTime,
       reminder_afternoon: reminderAfternoonTime,
       reminder_evening: reminderEveningTime,
       reminder_morning_enabled: reminderMorningEnabled,
       reminder_afternoon_enabled: reminderAfternoonEnabled,
       reminder_evening_enabled: reminderEveningEnabled,
-    });
+    };
 
-    setReminderConfigDirty(false);
+    persistReminderConfigLocally(payload);
+    try {
+      await saveUserSettingsToSupabase(currentUser.id, payload);
+      setReminderConfigDirty(false);
+      return true;
+    } catch (error) {
+      console.error('Error saving reminder settings to Supabase:', error);
+      setReminderConfigDirty(false);
+      return false;
+    }
   };
 
   const actualizarRecordatorioLocal = (tipo: 'morning' | 'afternoon' | 'evening', hora: string, activo: boolean) => {
@@ -757,12 +797,13 @@ export default function App() {
           setIsLoadingUserData(true);
           try {
             const userSettings = await loadUserSettingsFromSupabase(session.user.id);
-            setReminderMorningTime(userSettings?.reminder_morning || '08:00');
-            setReminderAfternoonTime(userSettings?.reminder_afternoon || '15:00');
-            setReminderEveningTime(userSettings?.reminder_evening || '18:00');
-            setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? true);
-            setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? true);
-            setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? true);
+            const reminderFallback = readReminderConfigLocally();
+            setReminderMorningTime(userSettings?.reminder_morning || reminderFallback?.reminder_morning || '08:00');
+            setReminderAfternoonTime(userSettings?.reminder_afternoon || reminderFallback?.reminder_afternoon || '15:00');
+            setReminderEveningTime(userSettings?.reminder_evening || reminderFallback?.reminder_evening || '18:00');
+            setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? reminderFallback?.reminder_morning_enabled ?? true);
+            setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? reminderFallback?.reminder_afternoon_enabled ?? true);
+            setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? reminderFallback?.reminder_evening_enabled ?? true);
             setReminderConfigDirty(false);
             const userSchedule = await loadUserScheduleFromSupabase(session.user.id);
 
@@ -801,12 +842,13 @@ export default function App() {
             setIsLoadingUserData(true);
             try {
               const userSettings = await loadUserSettingsFromSupabase(user.id);
-              setReminderMorningTime(userSettings?.reminder_morning || '08:00');
-              setReminderAfternoonTime(userSettings?.reminder_afternoon || '15:00');
-              setReminderEveningTime(userSettings?.reminder_evening || '18:00');
-              setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? true);
-              setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? true);
-              setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? true);
+              const reminderFallback = readReminderConfigLocally();
+              setReminderMorningTime(userSettings?.reminder_morning || reminderFallback?.reminder_morning || '08:00');
+              setReminderAfternoonTime(userSettings?.reminder_afternoon || reminderFallback?.reminder_afternoon || '15:00');
+              setReminderEveningTime(userSettings?.reminder_evening || reminderFallback?.reminder_evening || '18:00');
+              setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? reminderFallback?.reminder_morning_enabled ?? true);
+              setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? reminderFallback?.reminder_afternoon_enabled ?? true);
+              setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? reminderFallback?.reminder_evening_enabled ?? true);
               setReminderConfigDirty(false);
               const userSchedule = await loadUserScheduleFromSupabase(user.id);
 
@@ -1873,8 +1915,14 @@ export default function App() {
                     type="button"
                     onClick={async () => {
                       try {
-                        await guardarConfiguracionRecordatorios();
-                        setNotification({ title: '✅ Guardado', message: 'Los recordatorios se guardaron en Supabase.', type: 'success' });
+                        const savedRemotely = await guardarConfiguracionRecordatorios();
+                        setNotification({
+                          title: savedRemotely ? '✅ Guardado' : '💾 Guardado localmente',
+                          message: savedRemotely
+                            ? 'Los recordatorios se guardaron en Supabase.'
+                            : 'No se pudo sincronizar con Supabase, pero quedó guardado en este dispositivo.',
+                          type: savedRemotely ? 'success' : 'info',
+                        });
                         setTimeout(() => setNotification(null), 3000);
                       } catch (err) {
                         console.error('Error saving reminder settings:', err);
