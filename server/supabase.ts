@@ -759,6 +759,7 @@ const USER_COLS = {
   reminderMorningEnabled: 'reminder_morning_enabled',
   reminderAfternoonEnabled: 'reminder_afternoon_enabled',
   reminderEveningEnabled: 'reminder_evening_enabled',
+  reminderConfig: 'reminder_config',
   updatedAt: 'updated_at',
   weekKey: 'week_key',
   activityId: 'activity_id',
@@ -964,12 +965,12 @@ export async function loadUserSettings(userId: string): Promise<any | null> {
       notification_hour_end: data[USER_COLS.notificationHourEnd],
       onboarding_completed: data[USER_COLS.onboardingCompleted],
       user_name: data[USER_COLS.userName],
-      reminder_morning: data[USER_COLS.reminderMorning],
-      reminder_afternoon: data[USER_COLS.reminderAfternoon],
-      reminder_evening: data[USER_COLS.reminderEvening],
-      reminder_morning_enabled: data[USER_COLS.reminderMorningEnabled],
-      reminder_afternoon_enabled: data[USER_COLS.reminderAfternoonEnabled],
-      reminder_evening_enabled: data[USER_COLS.reminderEveningEnabled],
+      reminder_morning: data[USER_COLS.reminderConfig]?.morning || data[USER_COLS.reminderMorning] || '08:00',
+      reminder_afternoon: data[USER_COLS.reminderConfig]?.afternoon || data[USER_COLS.reminderAfternoon] || '15:00',
+      reminder_evening: data[USER_COLS.reminderConfig]?.evening || data[USER_COLS.reminderEvening] || '18:00',
+      reminder_morning_enabled: data[USER_COLS.reminderConfig]?.morning_enabled ?? data[USER_COLS.reminderMorningEnabled] ?? true,
+      reminder_afternoon_enabled: data[USER_COLS.reminderConfig]?.afternoon_enabled ?? data[USER_COLS.reminderAfternoonEnabled] ?? true,
+      reminder_evening_enabled: data[USER_COLS.reminderConfig]?.evening_enabled ?? data[USER_COLS.reminderEveningEnabled] ?? true,
     };
   } catch (error) {
     console.error('Error loading user settings:', error);
@@ -996,12 +997,18 @@ export async function saveUserSettings(userId: string, settings: any): Promise<v
           ...(settings.notification_hour_end !== undefined ? { [USER_COLS.notificationHourEnd]: settings.notification_hour_end } : {}),
           ...(settings.onboarding_completed !== undefined ? { [USER_COLS.onboardingCompleted]: settings.onboarding_completed } : {}),
           ...(settings.user_name !== undefined ? { [USER_COLS.userName]: settings.user_name } : {}),
-          ...(settings.reminder_morning !== undefined ? { [USER_COLS.reminderMorning]: settings.reminder_morning } : {}),
-          ...(settings.reminder_afternoon !== undefined ? { [USER_COLS.reminderAfternoon]: settings.reminder_afternoon } : {}),
-          ...(settings.reminder_evening !== undefined ? { [USER_COLS.reminderEvening]: settings.reminder_evening } : {}),
-          ...(settings.reminder_morning_enabled !== undefined ? { [USER_COLS.reminderMorningEnabled]: settings.reminder_morning_enabled } : {}),
-          ...(settings.reminder_afternoon_enabled !== undefined ? { [USER_COLS.reminderAfternoonEnabled]: settings.reminder_afternoon_enabled } : {}),
-          ...(settings.reminder_evening_enabled !== undefined ? { [USER_COLS.reminderEveningEnabled]: settings.reminder_evening_enabled } : {}),
+          ...(settings.reminder_morning !== undefined || settings.reminder_afternoon !== undefined || settings.reminder_evening !== undefined || settings.reminder_morning_enabled !== undefined || settings.reminder_afternoon_enabled !== undefined || settings.reminder_evening_enabled !== undefined
+            ? {
+                [USER_COLS.reminderConfig]: {
+                  morning: settings.reminder_morning,
+                  afternoon: settings.reminder_afternoon,
+                  evening: settings.reminder_evening,
+                  morning_enabled: settings.reminder_morning_enabled,
+                  afternoon_enabled: settings.reminder_afternoon_enabled,
+                  evening_enabled: settings.reminder_evening_enabled,
+                },
+              }
+            : {}),
         },
         { onConflict: USER_COLS.userId }
       );
