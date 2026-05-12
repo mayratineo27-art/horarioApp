@@ -1673,7 +1673,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm bg-white border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)] font-hand"
+              className="absolute left-0 top-0 h-full w-[86vw] max-w-sm bg-white border-r-4 border-indigo-950 p-5 pb-8 shadow-[24px_0_80px_rgba(15,23,42,0.45)] font-hand overflow-y-auto drawer-scrollbar"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-5">

@@ -38,21 +38,46 @@
 }
 
 .actividad-curso {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
   color: #0f172a !important;
-  border-left: 8px solid #1d4ed8 !important;
+  border-left: 8px solid #60a5fa !important;
 }
 
 .actividad-rutina {
-  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
   color: #14532d !important;
-  border-left: 8px solid #22c55e !important;
+  border-left: 8px solid #34d399 !important;
 }
 
 .actividad-tarea {
-  background: linear-gradient(135deg, #ffedd5 0%, #fed7aa 100%) !important;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%) !important;
   color: #7c2d12 !important;
-  border-left: 8px solid #f97316 !important;
+  border-left: 8px solid #fb923c !important;
+}
+
+.drawer-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f8fafc;
+  scrollbar-gutter: stable;
+}
+
+.drawer-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.drawer-scrollbar::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-left: 1px solid #e2e8f0;
+}
+
+.drawer-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
+  border-radius: 999px;
+  border: 2px solid #f8fafc;
+}
+
+.drawer-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
 }
 
 #modal-editar-actividad {
