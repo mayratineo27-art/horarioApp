@@ -1156,11 +1156,16 @@ export default function App() {
       }
 
       const subscription = await subscribeToPush(registration);
+      const userId = currentUser?.id;
+      if (!userId) {
+        throw new Error('Debes iniciar sesion para activar push y guardar la suscripcion.');
+      }
+
       await syncSubscriptionToBackend({
         subscription,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         schedule,
-        userId: currentUser?.id,
+        userId,
       });
 
       setNotificationsEnabled(true);

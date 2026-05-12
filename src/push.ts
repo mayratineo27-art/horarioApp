@@ -38,7 +38,7 @@ async function getApiBaseUrl() {
 }
 
 async function getApiToken() {
-  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env || {};
+  const env = (import.meta as any).env || {};
   return env.VITE_PUSH_API_TOKEN || 'mya_2026_9fJ2kL8pQw7xZr4nT6yV3bH1';
 }
 
