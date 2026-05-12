@@ -16,6 +16,7 @@ import {
   type CourseRecord,
   type CourseTaskItem,
   type PushSubscriptionPayload,
+  supabase,
 } from './supabase.js';
 
 dotenv.config({ override: true });
@@ -336,73 +337,257 @@ app.put('/api/courses/:courseCode/checklist', async (req, res) => {
 
 cron.schedule('* * * * *', async () => {
   try {
-    const config = await loadConfig();
-    const subscription = config.subscription as PushSubscriptionPayload | null;
-    if (!subscription?.endpoint || !config.schedule.length || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    const db = supabase;
+    if (!db) return;
+
+    // Iterate user configs (with subscription) and send due notifications per user/timezone
+    const { data: configs, error: configsError } = await db
+      .from('user_configs')
+      .select('user_key, subscription, schedule, timezone, sent_by_date')
+      .not('subscription', 'is', null);
+
+    if (configsError) {
+      console.error('Error fetching user configs for cron:', configsError);
       return;
     }
 
-    const { day, hh, mm, dateKey } = getLocalParts(config.timezone || 'America/Santo_Domingo');
-    
-    // Check if current hour is within notification window
-    const notificationStart = config.notificationHourStart ?? 7;
-    const notificationEnd = config.notificationHourEnd ?? 22;
-    if (hh < notificationStart || hh >= notificationEnd) {
-      return;
-    }
-    
-    const today = config.schedule.find((d) => normalizeDay(d.day) === normalizeDay(day));
-    if (!today) {
-      return;
-    }
+    for (const row of (configs as any[]) || []) {
+      try {
+        const userKey = row.user_key;
+        const subscription = (row.subscription || null) as PushSubscriptionPayload | null;
+        const schedule = Array.isArray(row.schedule) ? row.schedule : [];
+        const timezone = row.timezone || 'America/Santo_Domingo';
+        const sentByDate = row.sent_by_date || {};
 
-    const nowTotal = hh * 60 + mm;
-    const sentMap = config.sentByDate[dateKey] || {};
-    let changed = false;
+        if (!subscription?.endpoint || !schedule.length || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) continue;
 
-    for (const activity of today.activities) {
-      // Respect per-activity notification configuration (enabled/minutesBefore)
-      if (activity.notificationConfig && activity.notificationConfig.enabled === false) {
-        continue;
-      }
+        const { day, hh, mm, dateKey } = getLocalParts(timezone);
+        const nowTotal = hh * 60 + mm;
+        const sentMap = sentByDate[dateKey] || {};
+        let changed = false;
 
-      const minutesList = (activity.notificationConfig && Array.isArray(activity.notificationConfig.minutesBefore) && activity.notificationConfig.minutesBefore.length > 0)
-        ? activity.notificationConfig.minutesBefore
-        : WINDOWS;
+        const today = schedule.find((d: any) => normalizeDay(d.day) === normalizeDay(day));
+        if (!today) continue;
 
-      const startTotal = toTotalMinutes(activity.startTime);
-      const diff = startTotal - nowTotal;
+        // Process activities for notifications
+        for (const activity of today.activities || []) {
+          // Skip if notifications disabled for this activity
+          if (activity.notificationConfig && activity.notificationConfig.enabled === false) continue;
 
-      for (const win of minutesList) {
-        const key = `${activity.id}_${win}`;
-        if (diff !== win || sentMap[key]) {
-          continue;
-        }
+          const minutesList = (activity.notificationConfig && Array.isArray(activity.notificationConfig.minutesBefore) && activity.notificationConfig.minutesBefore.length > 0)
+            ? activity.notificationConfig.minutesBefore
+            : WINDOWS;
 
-        try {
-          const body = `Faltan ${win} minutos para: ${activity.name}`;
-          await sendPush(subscription, `Aviso ${win} min`, body);
-          sentMap[key] = true;
-          changed = true;
-        } catch (error: any) {
-          if (error?.statusCode === 410 || error?.statusCode === 404) {
-            config.subscription = null;
-            changed = true;
+          const startTotal = toTotalMinutes(activity.startTime);
+          const diff = startTotal - nowTotal;
+
+          for (const win of minutesList) {
+            const key = `${activity.id}_${win}`;
+            if (diff !== win || sentMap[key]) continue;
+            try {
+              const body = `Faltan ${win} minutos para: ${activity.name}`;
+              await sendPush(subscription, `Aviso ${win} min`, body);
+              sentMap[key] = true;
+              changed = true;
+            } catch (error: any) {
+              if (error?.statusCode === 410 || error?.statusCode === 404) {
+                // Invalidate subscription for this user
+                await saveConfig({
+                  timezone,
+                  schedule,
+                  subscription: null,
+                  sentByDate,
+                  notificationHourStart: 7,
+                  notificationHourEnd: 22,
+                }, userKey);
+                continue;
+              }
+            }
+          }
+
+          // Course-specific reminder 30 min before
+          if (activity.isAcademic || activity.activityType === 'FIJA_PERMANENTE') {
+            const diff30 = toTotalMinutes(activity.startTime) - nowTotal;
+            const key30 = `${activity.id}_curso_30`;
+            if (diff30 === 30 && !sentMap[key30]) {
+              const courseCode = activity.courseId || (activity.name.match(/\bIS-\d+\b/) || [])[0];
+              if (courseCode) {
+                try {
+                  const { data: checklistRow } = await db
+                    .from('course_checklists')
+                    .select('items')
+                    .eq('course_code', courseCode)
+                    .eq('user_key', userKey)
+                    .maybeSingle();
+
+                  const items = (checklistRow as any)?.items || [];
+                  const pendientes = (items || []).filter((i: any) => !i.done).length;
+
+                  let body = `En 30 min tienes ${activity.name}.`;
+                  if (pendientes > 0) body += ` ⚠️ Tienes ${pendientes} tarea${pendientes > 1 ? 's' : ''} pendiente${pendientes > 1 ? 's' : ''}.`;
+                  else body += ` ✅ Estás al día con tus tareas.`;
+
+                  await sendPush(subscription, '🎓 Clase próxima', body);
+                  sentMap[key30] = true;
+                  changed = true;
+                } catch (err) {
+                  console.error('Error fetching checklist for course reminder:', err);
+                }
+              }
+            }
           }
         }
+
+        const prunedSentByDate: Record<string, Record<string, boolean>> = {};
+        prunedSentByDate[dateKey] = sentMap;
+        if (changed || JSON.stringify(sentByDate) !== JSON.stringify(prunedSentByDate)) {
+          await saveConfig({
+            timezone,
+            schedule,
+            subscription,
+            sentByDate: prunedSentByDate,
+            notificationHourStart: 7,
+            notificationHourEnd: 22,
+          }, userKey);
+        }
+      } catch (err) {
+        console.error('Error processing user config in cron:', err);
       }
-    }
-
-    const prunedSentByDate: Record<string, Record<string, boolean>> = {};
-    prunedSentByDate[dateKey] = sentMap;
-
-    if (changed || JSON.stringify(config.sentByDate) !== JSON.stringify(prunedSentByDate)) {
-      config.sentByDate = prunedSentByDate;
-      await saveConfig(config);
     }
   } catch (error) {
     console.error('Error in cron job:', error);
   }
+});
+
+async function getPendingTaskSummary(userKey: string): Promise<{ total: number; courses: string[] }> {
+  const db = supabase;
+  if (!db) return { total: 0, courses: [] };
+
+  const { data: checklists } = await db
+    .from('course_checklists')
+    .select('course_code, items')
+    .eq('user_key', userKey);
+
+  const courses: string[] = [];
+  let total = 0;
+
+  for (const checklist of (checklists as any[]) || []) {
+    const items = checklist.items || [];
+    const pendingCount = (items || []).filter((item: any) => !item.done).length;
+    if (pendingCount > 0) {
+      courses.push(checklist.course_code);
+      total += pendingCount;
+    }
+  }
+
+  return { total, courses };
+}
+
+async function processTaskReminderWindow(
+  windowKey: 'morning' | 'afternoon' | 'evening',
+  timeField: 'reminder_morning' | 'reminder_afternoon' | 'reminder_evening',
+  enabledField: 'reminder_morning_enabled' | 'reminder_afternoon_enabled' | 'reminder_evening_enabled',
+  title: string,
+  buildMessage: (total: number, courses: string[]) => string,
+) {
+  const db = supabase;
+  if (!db) return;
+
+  const { data: configs, error } = await db
+    .from('user_configs')
+    .select('user_key, subscription, schedule, timezone, sent_by_date')
+    .not('subscription', 'is', null);
+
+  if (error) {
+    console.error(`Error fetching user configs for ${windowKey} reminder:`, error);
+    return;
+  }
+
+  for (const row of (configs as any[]) || []) {
+    try {
+      const userKey = row.user_key;
+      const subscription = (row.subscription || null) as PushSubscriptionPayload | null;
+      const timezone = row.timezone || 'America/Santo_Domingo';
+      const sentByDate = row.sent_by_date || {};
+
+      if (!subscription?.endpoint) continue;
+
+      const { hh, mm, dateKey } = getLocalParts(timezone);
+      const hhmm = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      const sentMap = sentByDate[dateKey] || {};
+      const sentKey = `${windowKey}_task_reminder`;
+      if (sentMap[sentKey]) continue;
+
+      const { data: userSettings } = await db
+        .from('user_settings')
+        .select(`${timeField}, ${enabledField}`)
+        .eq('user_id', userKey)
+        .maybeSingle();
+
+      if (!userSettings) continue;
+
+      const enabled = userSettings[enabledField] !== false;
+      const reminderTime = userSettings[timeField] || (windowKey === 'morning' ? '08:00' : windowKey === 'afternoon' ? '15:00' : '18:00');
+      if (!enabled || hhmm !== reminderTime) continue;
+
+      const { total, courses } = await getPendingTaskSummary(userKey);
+      if (total <= 0 || courses.length === 0) {
+        sentMap[sentKey] = true;
+        await saveConfig({
+          timezone,
+          schedule: row.schedule || [],
+          subscription,
+          sentByDate: { ...sentByDate, [dateKey]: sentMap },
+          notificationHourStart: 7,
+          notificationHourEnd: 22,
+        }, userKey);
+        continue;
+      }
+
+      await sendPush(subscription, title, buildMessage(total, courses));
+      sentMap[sentKey] = true;
+      await saveConfig({
+        timezone,
+        schedule: row.schedule || [],
+        subscription,
+        sentByDate: { ...sentByDate, [dateKey]: sentMap },
+        notificationHourStart: 7,
+        notificationHourEnd: 22,
+      }, userKey);
+    } catch (error) {
+      console.error(`Error processing ${windowKey} reminder:`, error);
+    }
+  }
+}
+
+cron.schedule('* * * * *', async () => {
+  await processTaskReminderWindow(
+    'morning',
+    'reminder_morning',
+    'reminder_morning_enabled',
+    '🌅 Buenos días, Mayra!',
+    (total, courses) => `Tienes ${total} tareas pendientes en: ${courses.join(', ')}. ¡Buen día para avanzar!`,
+  );
+});
+
+cron.schedule('* * * * *', async () => {
+  await processTaskReminderWindow(
+    'afternoon',
+    'reminder_afternoon',
+    'reminder_afternoon_enabled',
+    '☀️ Recordatorio de tarde',
+    (total, courses) => `Aún tienes tiempo hoy. ${total} tareas pendientes en: ${courses.join(', ')}.`,
+  );
+});
+
+cron.schedule('* * * * *', async () => {
+  await processTaskReminderWindow(
+    'evening',
+    'reminder_evening',
+    'reminder_evening_enabled',
+    '🌙 Antes de cerrar el día',
+    (total, courses) => `No olvides revisar tus tareas. ${total} pendientes en: ${courses.join(', ')}.`,
+  );
 });
 
 /**

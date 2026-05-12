@@ -209,6 +209,12 @@ export default function App() {
   const [authReady, setAuthReady] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
+  const [reminderMorningEnabled, setReminderMorningEnabled] = useState(true);
+  const [reminderAfternoonEnabled, setReminderAfternoonEnabled] = useState(true);
+  const [reminderEveningEnabled, setReminderEveningEnabled] = useState(true);
+  const [reminderMorningTime, setReminderMorningTime] = useState('08:00');
+  const [reminderAfternoonTime, setReminderAfternoonTime] = useState('15:00');
+  const [reminderEveningTime, setReminderEveningTime] = useState('18:00');
 
   const parseMinutes = (value: string) => {
     const [hours, minutes] = value.split(':').map(Number);
@@ -711,6 +717,12 @@ export default function App() {
           setIsLoadingUserData(true);
           try {
             const userSettings = await loadUserSettingsFromSupabase(session.user.id);
+            setReminderMorningTime(userSettings?.reminder_morning || '08:00');
+            setReminderAfternoonTime(userSettings?.reminder_afternoon || '15:00');
+            setReminderEveningTime(userSettings?.reminder_evening || '18:00');
+            setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? true);
+            setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? true);
+            setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? true);
             const userSchedule = await loadUserScheduleFromSupabase(session.user.id);
 
             const needsOnboarding = !userSettings?.onboarding_completed;
@@ -748,6 +760,12 @@ export default function App() {
             setIsLoadingUserData(true);
             try {
               const userSettings = await loadUserSettingsFromSupabase(user.id);
+              setReminderMorningTime(userSettings?.reminder_morning || '08:00');
+              setReminderAfternoonTime(userSettings?.reminder_afternoon || '15:00');
+              setReminderEveningTime(userSettings?.reminder_evening || '18:00');
+              setReminderMorningEnabled(userSettings?.reminder_morning_enabled ?? true);
+              setReminderAfternoonEnabled(userSettings?.reminder_afternoon_enabled ?? true);
+              setReminderEveningEnabled(userSettings?.reminder_evening_enabled ?? true);
               const userSchedule = await loadUserScheduleFromSupabase(user.id);
 
               const needsOnboarding = !userSettings?.onboarding_completed;
@@ -1581,6 +1599,12 @@ export default function App() {
           user_name: currentUser.name,
           notification_hour_start: 7,
           notification_hour_end: 22,
+          reminder_morning: '08:00',
+          reminder_afternoon: '15:00',
+          reminder_evening: '18:00',
+          reminder_morning_enabled: true,
+          reminder_afternoon_enabled: true,
+          reminder_evening_enabled: true,
         }),
       ]);
 
@@ -1710,6 +1734,7 @@ export default function App() {
 
               {/* User Section */}
               {currentUser && (
+                <>
                 <div className="mt-6 pt-6 border-t-2 border-slate-200 space-y-3">
                   <div className="flex items-center gap-3 px-3 py-2">
                     {currentUser.avatar_url ? (
@@ -1746,6 +1771,93 @@ export default function App() {
                     <span className="text-3xl leading-none">Cerrar sesión</span>
                   </button>
                 </div>
+                <div className="mt-4 p-4 border-2 border-slate-200 rounded-2xl bg-white space-y-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-700">⏰ Recordatorios de tareas</p>
+                    <p className="text-xs text-slate-500 mt-1">Activa o desactiva cada horario y ajusta su hora de envío.</p>
+                  </div>
+
+                  {[
+                    {
+                      key: 'morning',
+                      label: '🌅 Mañana',
+                      enabled: reminderMorningEnabled,
+                      time: reminderMorningTime,
+                      setterEnabled: setReminderMorningEnabled,
+                      setterTime: setReminderMorningTime,
+                    },
+                    {
+                      key: 'afternoon',
+                      label: '☀️ Tarde',
+                      enabled: reminderAfternoonEnabled,
+                      time: reminderAfternoonTime,
+                      setterEnabled: setReminderAfternoonEnabled,
+                      setterTime: setReminderAfternoonTime,
+                    },
+                    {
+                      key: 'evening',
+                      label: '🌙 Noche',
+                      enabled: reminderEveningEnabled,
+                      time: reminderEveningTime,
+                      setterEnabled: setReminderEveningEnabled,
+                      setterTime: setReminderEveningTime,
+                    },
+                  ].map((item) => (
+                    <div key={item.key} className="rounded-2xl border-2 border-slate-200 p-3 space-y-2 bg-slate-50/70">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-black text-slate-800">{item.label}</span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={item.enabled}
+                          onClick={async () => {
+                            const nextEnabled = !item.enabled;
+                            item.setterEnabled(nextEnabled);
+                            if (!currentUser?.id) return;
+                            try {
+                              await saveUserSettingsToSupabase(currentUser.id, {
+                                reminder_morning: item.key === 'morning' ? item.time : reminderMorningTime,
+                                reminder_afternoon: item.key === 'afternoon' ? item.time : reminderAfternoonTime,
+                                reminder_evening: item.key === 'evening' ? item.time : reminderEveningTime,
+                                reminder_morning_enabled: item.key === 'morning' ? nextEnabled : reminderMorningEnabled,
+                                reminder_afternoon_enabled: item.key === 'afternoon' ? nextEnabled : reminderAfternoonEnabled,
+                                reminder_evening_enabled: item.key === 'evening' ? nextEnabled : reminderEveningEnabled,
+                              });
+                            } catch (err) {
+                              console.error('Error saving reminder toggle:', err);
+                            }
+                          }}
+                          className={`relative inline-flex h-8 w-14 items-center rounded-full border-2 transition ${item.enabled ? 'bg-emerald-400 border-emerald-600' : 'bg-slate-200 border-slate-400'}`}
+                        >
+                          <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${item.enabled ? 'translate-x-7' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                      <input
+                        type="time"
+                        value={item.time}
+                        onChange={async (e) => {
+                          const nextTime = e.target.value;
+                          item.setterTime(nextTime);
+                          if (!currentUser?.id) return;
+                          try {
+                            await saveUserSettingsToSupabase(currentUser.id, {
+                              reminder_morning: item.key === 'morning' ? nextTime : reminderMorningTime,
+                              reminder_afternoon: item.key === 'afternoon' ? nextTime : reminderAfternoonTime,
+                              reminder_evening: item.key === 'evening' ? nextTime : reminderEveningTime,
+                              reminder_morning_enabled: reminderMorningEnabled,
+                              reminder_afternoon_enabled: reminderAfternoonEnabled,
+                              reminder_evening_enabled: reminderEveningEnabled,
+                            });
+                          } catch (err) {
+                            console.error('Error saving reminder time:', err);
+                          }
+                        }}
+                        className="w-full rounded-xl border-2 border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+                </>
               )}
             </motion.aside>
           </motion.div>

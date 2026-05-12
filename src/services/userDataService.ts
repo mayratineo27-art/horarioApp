@@ -10,6 +10,12 @@ export interface UserSettings {
   notification_hour_end?: number;
   onboarding_completed?: boolean;
   user_name?: string;
+  reminder_morning?: string;
+  reminder_afternoon?: string;
+  reminder_evening?: string;
+  reminder_morning_enabled?: boolean;
+  reminder_afternoon_enabled?: boolean;
+  reminder_evening_enabled?: boolean;
 }
 
 const TABLES = {
