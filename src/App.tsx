@@ -15,7 +15,6 @@ import {
   Zap, 
   Heart, 
   Code, 
-  Palette, 
   BookOpen,
   User,
   Bell,
@@ -171,18 +170,29 @@ export default function App() {
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [scheduleSyncStatus, setScheduleSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
+  const PALETTE_COLOR_GROUPS = [
+    { label: '🔴 Rojos y rosas pastel', colors: ['#FFB3BA', '#FFCDD2', '#F8BBD9', '#FCE4EC', '#FF8A80', '#FF80AB'] },
+    { label: '🟠 Naranjas pastel', colors: ['#FFCCBC', '#FFE0B2', '#FFAB91', '#FFCC02', '#FFD180', '#FF9E80'] },
+    { label: '🟡 Amarillos pastel', colors: ['#FFF9C4', '#FFFDE7', '#F9A825', '#FFE57F', '#FFF176', '#FFEE58'] },
+    { label: '🟢 Verdes pastel', colors: ['#C8E6C9', '#DCEDC8', '#B2DFDB', '#A5D6A7', '#C5E1A5', '#80CBC4'] },
+    { label: '🔵 Azules pastel', colors: ['#BBDEFB', '#B3E5FC', '#B2EBF2', '#90CAF9', '#81D4FA', '#80DEEA'] },
+    { label: '🟣 Morados y lavanda pastel', colors: ['#E1BEE7', '#D1C4E9', '#C5CAE9', '#CE93D8', '#B39DDB', '#9FA8DA'] },
+    { label: '🩷 Tonos piel y neutros cálidos', colors: ['#EFEBE9', '#D7CCC8', '#FFF8E1', '#F5F5F5', '#ECEFF1', '#FFFFFF'] },
+    { label: '🌈 Colores vibrantes suaves', colors: ['#F48FB1', '#80CBC4', '#FFD54F', '#AED581', '#4DD0E1', '#7986CB'] },
+  ] as const;
+  const PALETTE_COLORS = PALETTE_COLOR_GROUPS.flatMap(group => group.colors);
+  const DEFAULT_PALETTE_COLOR = PALETTE_COLORS[0];
   const [editorData, setEditorData] = useState({
     name: '',
     start: '12:00',
     end: '13:00',
     emoji: '📍',
     isCourseMarked: false,
-    customColor: '',
+    customColor: DEFAULT_PALETTE_COLOR,
     activityType: ActivityType.FLEXIBLE,
     isWeekly: false,
     notificationConfig: { enabled: true, minutesBefore: [90, 30, 10], sound: 'default' as const },
   });
-  const DEFAULT_PALETTE = ['#6B213F', '#8B5E83', '#4C6A92', '#29434E', '#7C3AED', '#B91C1C', '#0EA5A4', '#0EA5F5', '#FB923C', '#EF4444', '#334155', '#1F2937', '#F97316', '#F43F5E', '#022C43', '#ffffff'];
   const [notification, setNotification] = useState<{title: string, message: string, activityId?: string, undoActivityId?: string, type?: 'success' | 'error' | 'info'} | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -1307,7 +1317,6 @@ export default function App() {
         || editorData.end !== '13:00'
         || (editorData.emoji || '📍') !== '📍'
         || editorData.isCourseMarked
-        || (editorData.customColor || '').trim().length > 0
         || editorData.activityType !== ActivityType.FLEXIBLE
         || aplicarTodaSemana
         || normalizedChecklist.length > 0
@@ -1324,7 +1333,6 @@ export default function App() {
       || editorData.end !== original.endTime
       || (editorData.emoji || '📍') !== (original.emoji || '📍')
       || !!editorData.isCourseMarked !== !!original.isCourseMarked
-      || (editorData.customColor || '').trim() !== (original.customColor || '').trim()
       || (editorData.activityType || ActivityType.FLEXIBLE) !== (original.activityType || ActivityType.FLEXIBLE)
       || !!aplicarTodaSemana !== !!original.isWeekly
       || normalizedChecklist !== originalChecklist
@@ -1349,8 +1357,7 @@ export default function App() {
 
   const handleSaveActivity = async (options?: { ignoreConflict?: boolean }) => {
     const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
-    const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
-    const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
+    const chosenColor = customColor || DEFAULT_PALETTE_COLOR;
     if (!name.trim()) return;
 
     const nextChecklist = checklistText
@@ -1507,7 +1514,7 @@ export default function App() {
     setShowEditor(null);
     setAdjustableActivityDecision(null);
     setAplicarTodaSemana(false);
-    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
+    setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE_COLOR, activityType: ActivityType.FLEXIBLE, isWeekly: false });
     setTimeout(() => setNotification(null), 3000);
   };
 
@@ -1519,7 +1526,7 @@ export default function App() {
         end: activity.endTime,
         emoji: activity.emoji || '📍',
         isCourseMarked: activity.isCourseMarked || false,
-        customColor: activity.customColor || '',
+        customColor: activity.customColor || DEFAULT_PALETTE_COLOR,
         activityType: activity.activityType || ActivityType.FLEXIBLE,
         isWeekly: !!activity.isWeekly,
         notificationConfig: activity.notificationConfig || { enabled: true, minutesBefore: [90,30,10], sound: 'default' },
@@ -1534,7 +1541,7 @@ export default function App() {
         end: '13:00',
         emoji: '📍',
         isCourseMarked: false,
-        customColor: DEFAULT_PALETTE[0],
+        customColor: DEFAULT_PALETTE_COLOR,
         activityType: ActivityType.FLEXIBLE,
         isWeekly: false,
         notificationConfig: { enabled: true, minutesBefore: [90, 30, 10], sound: 'default' },
@@ -2423,23 +2430,38 @@ export default function App() {
                   </div>
 
                   <div className="mt-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Color personalizado</label>
-                    <div className="mt-2 flex items-center gap-3">
-                      <input
-                        type="color"
-                        value={editorData.customColor || DEFAULT_PALETTE[0]}
-                        onChange={(e) => setEditorData(prev => ({ ...prev, customColor: e.target.value }))}
-                        className="w-12 h-12 p-0 border-2 rounded-lg"
-                        aria-label="Seleccionar color"
-                      />
-                      <input
-                        type="text"
-                        value={editorData.customColor}
-                        onChange={(e) => setEditorData(prev => ({ ...prev, customColor: e.target.value }))}
-                        placeholder="#RRGGBB"
-                        className="w-full bg-slate-50 border-2 border-indigo-900 p-3 rounded-xl focus:outline-none font-mono text-sm"
-                      />
-                      <div className="w-10 h-10 rounded-lg border-2" style={{ background: editorData.customColor || 'transparent' }} />
+                    <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full border-2 border-slate-900" style={{ background: editorData.customColor || DEFAULT_PALETTE_COLOR }} />
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Color personalizado</p>
+                          <p className="text-sm font-bold text-slate-700">Selecciona un color de la paleta.</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {PALETTE_COLOR_GROUPS.map((group, groupIndex) => (
+                          <div key={group.label} className={`${groupIndex > 0 ? 'pt-3 border-t border-slate-200' : ''}`}>
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">{group.label}</p>
+                            <div className="grid grid-cols-6 gap-2">
+                              {group.colors.map((color) => {
+                                const selected = editorData.customColor === color;
+                                return (
+                                  <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => setEditorData(prev => ({ ...prev, customColor: color }))}
+                                    className={`w-7 h-7 rounded-full border-2 transition-transform active:scale-95 ${selected ? 'border-slate-900 ring-2 ring-slate-900 ring-offset-2 ring-offset-white' : 'border-slate-300'}`}
+                                    style={{ background: color }}
+                                    aria-label={`Seleccionar color ${color}`}
+                                    aria-pressed={selected}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
@@ -2455,17 +2477,6 @@ export default function App() {
                       </label>
                     </div>
 
-                    <div className="mt-2 flex gap-2">
-                      {DEFAULT_PALETTE.map((c) => (
-                        <button
-                          key={c}
-                          onClick={() => setEditorData(prev => ({ ...prev, customColor: c }))}
-                          className="w-8 h-8 rounded-lg border-2"
-                          style={{ background: c }}
-                          aria-label={`usar color ${c}`}
-                        />
-                      ))}
-                    </div>
                   </div>
 
                   {/* Notification settings per activity */}
@@ -2911,9 +2922,8 @@ export default function App() {
                       });
                       // Trigger save with decision flag
                       setTimeout(() => {
-                        const { name, start, end, emoji, isCourseMarked, customColor } = editorData;
-                        const isValidHex = (c?: string) => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
-                        const chosenColor = isValidHex(customColor) ? customColor!.trim() : DEFAULT_PALETTE[0];
+                        const { name, start, end, emoji, isCourseMarked } = editorData;
+                        const chosenColor = editorData.customColor || DEFAULT_PALETTE_COLOR;
                         
                         const nextSchedule = schedule.map((day, dayIndex) => {
                           if (dayIndex !== activeDayIndex) return day;
@@ -2929,7 +2939,7 @@ export default function App() {
                                   checklist: checklistText.split(/[\n,]/).map(item => item.trim()).filter(Boolean),
                                   courseId: a.courseId || a.id, 
                                   isCourseMarked, 
-                                  customColor: isValidHex(customColor) ? customColor : a.customColor,
+                                  customColor: chosenColor,
                                   activityType: editorData.activityType
                                 } 
                               : a
@@ -2954,7 +2964,7 @@ export default function App() {
                         });
                         setShowEditor(null);
                         setAdjustableActivityDecision(null);
-                        setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: '', activityType: ActivityType.FLEXIBLE, isWeekly: false });
+                        setEditorData({ name: '', start: '12:00', end: '13:00', emoji: '📍', isCourseMarked: false, customColor: DEFAULT_PALETTE_COLOR, activityType: ActivityType.FLEXIBLE, isWeekly: false });
                       }, 0);
                     }}
                     className="py-3 rounded-xl border-2 border-amber-600 bg-amber-600 font-bold text-white hover:bg-amber-700 transition"
