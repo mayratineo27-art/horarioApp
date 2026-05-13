@@ -433,17 +433,25 @@ export default function App() {
 
     schedule.forEach(day => {
       day.activities.forEach(activity => {
+        // Compute potential course code (may be a manual id)
+        const potentialCourseCode = activity.courseId || extractCourseCode(activity.name);
+        if (!potentialCourseCode) return;
+
+        // Exclude automatically-created manual ids unless explicitly marked as course
+        if (potentialCourseCode.startsWith('manual-') && activity.isCourseMarked !== true) return;
+
         // Only include activity if it should be considered a course
         const esCurso =
           activity.isCourseMarked === true ||
           activity.isAcademic === true ||
           activity.activityType === ActivityType.FIJA_PERMANENTE ||
-          (activity.courseId && /IS-/.test(activity.name));
+          /\bIS-\d+\b/.test(activity.name) ||
+          /\bLab\b/i.test(activity.name) ||
+          activity.category === Category.ACADEMIC;
 
         if (!esCurso) return; // skip non-course activities
 
-        const courseCode = activity.courseId || extractCourseCode(activity.name);
-        if (!courseCode) return;
+        const courseCode = potentialCourseCode;
 
         const title = stripCourseCode(activity.name);
         const existing = cards.get(courseCode);
