@@ -433,6 +433,15 @@ export default function App() {
 
     schedule.forEach(day => {
       day.activities.forEach(activity => {
+        // Only include activity if it should be considered a course
+        const esCurso =
+          activity.isCourseMarked === true ||
+          activity.isAcademic === true ||
+          activity.activityType === ActivityType.FIJA_PERMANENTE ||
+          (activity.courseId && /IS-/.test(activity.name));
+
+        if (!esCurso) return; // skip non-course activities
+
         const courseCode = activity.courseId || extractCourseCode(activity.name);
         if (!courseCode) return;
 
@@ -1466,7 +1475,7 @@ export default function App() {
       emoji,
       courseId: showEditor?.mode === 'edit' && showEditor.activityId ? showEditor.activityId : `manual-${Date.now()}`,
       checklist: nextChecklist,
-      isCourseMarked,
+      isCourseMarked: !!isCourseMarked,
       customColor: chosenColor,
       activityType: editorData.activityType,
       isWeekly: aplicarTodaSemana,
@@ -1561,12 +1570,12 @@ export default function App() {
 
   const openEditor = (mode: 'add' | 'edit', activity?: Activity) => {
     if (mode === 'edit' && activity) {
-      setEditorData({
+        setEditorData({
         name: activity.name,
         start: activity.startTime,
         end: activity.endTime,
         emoji: activity.emoji || '📍',
-        isCourseMarked: activity.isCourseMarked || false,
+        isCourseMarked: !!activity.isCourseMarked,
         customColor: activity.customColor || DEFAULT_PALETTE_COLOR,
         activityType: activity.activityType || ActivityType.FLEXIBLE,
         isWeekly: !!activity.isWeekly,
