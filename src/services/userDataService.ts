@@ -81,7 +81,25 @@ export const loadUserSettingsFromSupabase = async (userId: string): Promise<User
 
     if (error?.code === 'PGRST116') return null;
     if (error) throw error;
-    return data || null;
+    
+    if (!data) return null;
+
+    // Desestructure reminder_config JSON into simple properties
+    const reminderConfig = data.reminder_config || {};
+    const settings: UserSettings = {
+      notification_hour_start: data.notification_hour_start,
+      notification_hour_end: data.notification_hour_end,
+      onboarding_completed: data.onboarding_completed,
+      user_name: data.user_name,
+      reminder_morning: reminderConfig.morning || '08:00',
+      reminder_afternoon: reminderConfig.afternoon || '15:00',
+      reminder_evening: reminderConfig.evening || '18:00',
+      reminder_morning_enabled: reminderConfig.morning_enabled ?? true,
+      reminder_afternoon_enabled: reminderConfig.afternoon_enabled ?? true,
+      reminder_evening_enabled: reminderConfig.evening_enabled ?? true,
+    };
+
+    return settings;
   } catch (error: any) {
     if (error?.code === 'PGRST205' || error?.status === 404) {
       console.debug('Supabase table missing (user_settings). Returning null.');
@@ -94,12 +112,26 @@ export const loadUserSettingsFromSupabase = async (userId: string): Promise<User
 
 export const saveUserSettingsToSupabase = async (userId: string, settings: UserSettings): Promise<void> => {
   try {
+    // Build reminder_config JSON from simple properties
+    const reminderConfig = {
+      morning: settings.reminder_morning || '08:00',
+      afternoon: settings.reminder_afternoon || '15:00',
+      evening: settings.reminder_evening || '18:00',
+      morning_enabled: settings.reminder_morning_enabled ?? true,
+      afternoon_enabled: settings.reminder_afternoon_enabled ?? true,
+      evening_enabled: settings.reminder_evening_enabled ?? true,
+    };
+
     const { error } = await supabase
       .from(TABLES.settings)
       .upsert(
         {
           user_id: userId,
-          ...settings,
+          notification_hour_start: settings.notification_hour_start,
+          notification_hour_end: settings.notification_hour_end,
+          onboarding_completed: settings.onboarding_completed,
+          user_name: settings.user_name,
+          reminder_config: reminderConfig,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' }
