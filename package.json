@@ -12,7 +12,8 @@
     "verify:course": "node scripts/verify-course-checklist.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node mya-dynamics.test.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -36,6 +37,7 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
+    "jest": "^30.4.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

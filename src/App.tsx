@@ -80,6 +80,7 @@ type DrawerView = 'horario' | 'mis-cursos';
 type CourseTaskItem = {
   id: string;
   text: string;
+  status: 'todo' | 'doing' | 'done';
   done: boolean;
 };
 
@@ -93,6 +94,13 @@ type CourseCard = {
   endTime: string;
   blocks: Array<{ day: string; startTime: string; endTime: string }>;
   checklist: CourseTaskItem[];
+};
+
+type NewCourseBlock = {
+  id: string;
+  dayIndex: number;
+  startTime: string;
+  endTime: string;
 };
 
 type CourseTemplate = {
@@ -168,6 +176,7 @@ export default function App() {
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(null);
   const [courseChecklists, setCourseChecklists] = useState<Record<string, CourseTaskItem[]>>({});
   const [newCourseTask, setNewCourseTask] = useState('');
+  const [newCourseTaskStatus, setNewCourseTaskStatus] = useState<'todo' | 'doing' | 'done'>('todo');
   const [courseSyncStatus, setCourseSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [scheduleSyncStatus, setScheduleSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle');
   const [showEditor, setShowEditor] = useState<{ mode: 'add' | 'edit', activityId?: string } | null>(null);
@@ -208,9 +217,12 @@ export default function App() {
   const [newCourseForm, setNewCourseForm] = useState({
     courseCode: '',
     title: '',
-    dayIndex: 0,
-    startTime: '07:00',
-    endTime: '09:00',
+    blocks: [{
+      id: `block-${Date.now()}`,
+      dayIndex: 0,
+      startTime: '07:00',
+      endTime: '09:00',
+    }] as NewCourseBlock[],
     emoji: '📘',
   });
   
@@ -274,6 +286,67 @@ export default function App() {
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const normalizeCourseTask = (task: any, index: number): CourseTaskItem => {
+    const normalizedStatus = task?.status === 'todo' || task?.status === 'doing' || task?.status === 'done'
+      ? task.status
+      : task?.done
+        ? 'done'
+        : 'todo';
+
+    return {
+      id: task?.id || `task-${Date.now()}-${index}`,
+      text: String(task?.text || task || '').trim(),
+      status: normalizedStatus,
+      done: normalizedStatus === 'done',
+    };
+  };
+
+  const syncCourseTaskState = (task: CourseTaskItem, status: 'todo' | 'doing' | 'done'): CourseTaskItem => ({
+    ...task,
+    status,
+    done: status === 'done',
+  });
+
+  const createNewCourseBlock = (dayIndex = 0): NewCourseBlock => ({
+    id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    dayIndex,
+    startTime: '07:00',
+    endTime: '09:00',
+  });
+
+  const resetNewCourseForm = () => {
+    setNewCourseForm({
+      courseCode: '',
+      title: '',
+      blocks: [createNewCourseBlock(0)],
+      emoji: '📘',
+    });
+  };
+
+  const updateNewCourseBlock = (blockId: string, patch: Partial<NewCourseBlock>) => {
+    setNewCourseForm(prev => ({
+      ...prev,
+      blocks: prev.blocks.map(block => (block.id === blockId ? { ...block, ...patch } : block)),
+    }));
+  };
+
+  const addNewCourseBlock = () => {
+    setNewCourseForm(prev => ({
+      ...prev,
+      blocks: [...prev.blocks, createNewCourseBlock(Math.min(prev.blocks.length, schedule.length - 1))],
+    }));
+  };
+
+  const removeNewCourseBlock = (blockId: string) => {
+    setNewCourseForm(prev => {
+      if (prev.blocks.length === 1) return prev;
+      return {
+        ...prev,
+        blocks: prev.blocks.filter(block => block.id !== blockId),
+      };
+    });
   };
 
   const getWeekMondayKey = (date = new Date()) => {
@@ -550,6 +623,36 @@ export default function App() {
 
   const selectedCourseTasks = selectedCourse ? (courseChecklists[selectedCourse.courseCode] || selectedCourse.checklist || []) : [];
 
+  const courseTaskColumns: Array<{
+    key: 'todo' | 'doing' | 'done';
+    title: string;
+    subtitle: string;
+    cardClass: string;
+    chipClass: string;
+  }> = [
+    {
+      key: 'todo',
+      title: 'Pendientes',
+      subtitle: 'Por empezar',
+      cardClass: 'border-amber-200 bg-amber-50/70',
+      chipClass: 'bg-amber-100 text-amber-800',
+    },
+    {
+      key: 'doing',
+      title: 'En progreso',
+      subtitle: 'En ejecución',
+      cardClass: 'border-sky-200 bg-sky-50/70',
+      chipClass: 'bg-sky-100 text-sky-800',
+    },
+    {
+      key: 'done',
+      title: 'Completadas',
+      subtitle: 'Finalizadas',
+      cardClass: 'border-emerald-200 bg-emerald-50/70',
+      chipClass: 'bg-emerald-100 text-emerald-800',
+    },
+  ];
+
   const findCourseActivity = (courseCode: string) => {
     for (let dayIndex = 0; dayIndex < schedule.length; dayIndex += 1) {
       const day = schedule[dayIndex];
@@ -653,7 +756,7 @@ export default function App() {
   const handleCreateCourseFromForm = async () => {
     const courseCode = newCourseForm.courseCode.trim().toUpperCase();
     const title = newCourseForm.title.trim();
-    const { dayIndex, startTime, endTime, emoji } = newCourseForm;
+    const { blocks, emoji } = newCourseForm;
 
     if (!courseCode || !title) {
       setNotification({
@@ -665,7 +768,18 @@ export default function App() {
       return;
     }
 
-    if (parseMinutes(endTime) <= parseMinutes(startTime)) {
+    if (!Array.isArray(blocks) || blocks.length === 0) {
+      setNotification({
+        title: '⚠️ Horario requerido',
+        message: 'Debes agregar al menos un día con horario para el curso.',
+        type: 'error',
+      });
+      setTimeout(() => setNotification(null), 2500);
+      return;
+    }
+
+    const invalidBlock = blocks.find(block => parseMinutes(block.endTime) <= parseMinutes(block.startTime));
+    if (invalidBlock) {
       setNotification({
         title: '⚠️ Horario inválido',
         message: 'La hora de fin debe ser mayor que la hora de inicio.',
@@ -677,24 +791,28 @@ export default function App() {
 
     const courseName = `${title} (${courseCode})`;
 
-    const nextSchedule = schedule.map((day, index) => {
-      if (index !== dayIndex) return day;
+    const nextSchedule = schedule.map(day => ({
+      ...day,
+      activities: [...day.activities],
+    }));
 
-      const alreadyExists = day.activities.some(activity => {
+    blocks.forEach(block => {
+      const targetDay = nextSchedule[block.dayIndex];
+      if (!targetDay) return;
+
+      const alreadyExists = targetDay.activities.some(activity => {
         const activityCode = (activity.courseId || extractCourseCode(activity.name) || '').toUpperCase();
-        return activityCode === courseCode && activity.startTime === startTime && activity.endTime === endTime;
+        return activityCode === courseCode && activity.startTime === block.startTime && activity.endTime === block.endTime;
       });
 
-      if (alreadyExists) {
-        return day;
-      }
+      if (alreadyExists) return;
 
       const courseActivity: Activity = {
-        id: `course-${courseCode}-${dayIndex}-${Date.now()}`,
+        id: `course-${courseCode}-${block.dayIndex}-${Date.now()}-${block.id}`,
         name: courseName,
         category: Category.ACADEMIC,
-        startTime,
-        endTime,
+        startTime: block.startTime,
+        endTime: block.endTime,
         isFixed: true,
         isCourseMarked: true,
         activityType: ActivityType.FIJA_PERMANENTE,
@@ -702,25 +820,16 @@ export default function App() {
         courseId: courseCode,
       };
 
-      return {
-        ...day,
-        activities: [...day.activities, courseActivity].sort((left, right) => left.startTime.localeCompare(right.startTime)),
-      };
+      targetDay.activities.push(courseActivity);
+      targetDay.activities.sort((left, right) => left.startTime.localeCompare(right.startTime));
     });
 
     await guardarHorario(nextSchedule);
     setShowAddCourseModal(false);
-    setNewCourseForm({
-      courseCode: '',
-      title: '',
-      dayIndex: 0,
-      startTime: '07:00',
-      endTime: '09:00',
-      emoji: '📘',
-    });
+    resetNewCourseForm();
     setNotification({
       title: '✅ Horario modificado',
-      message: `Se añadió ${courseName} al horario.`,
+      message: `Se añadió ${courseName} con ${blocks.length} bloque${blocks.length === 1 ? '' : 's'} al horario.`,
       type: 'success',
     });
     setTimeout(() => setNotification(null), 3200);
@@ -755,13 +864,19 @@ export default function App() {
 
   const addCourseTask = async () => {
     if (!selectedCourse || !newCourseTask.trim()) return;
-    const nextTasks = [...selectedCourseTasks, { id: `task-${Date.now()}`, text: newCourseTask.trim(), done: false }];
+    const nextTasks = [...selectedCourseTasks, {
+      id: `task-${Date.now()}`,
+      text: newCourseTask.trim(),
+      status: newCourseTaskStatus,
+      done: newCourseTaskStatus === 'done',
+    }];
     setNewCourseTask('');
+    setNewCourseTaskStatus('todo');
     await persistCourseTasks(selectedCourse.courseCode, nextTasks);
   };
 
-  const toggleCourseTask = async (courseCode: string, taskId: string) => {
-    const nextTasks = (courseChecklists[courseCode] || []).map(task => task.id === taskId ? { ...task, done: !task.done } : task);
+  const setCourseTaskStatus = async (courseCode: string, taskId: string, status: 'todo' | 'doing' | 'done') => {
+    const nextTasks = (courseChecklists[courseCode] || []).map(task => task.id === taskId ? syncCourseTaskState(task, status) : task);
     await persistCourseTasks(courseCode, nextTasks);
   };
 
@@ -892,11 +1007,7 @@ export default function App() {
         const checklists: Record<string, CourseTaskItem[]> = {};
         data.forEach((row: any) => {
           checklists[row.course_code] = Array.isArray(row.items)
-            ? row.items.map((item: any, index: number) => ({
-                id: item.id || `task-${index}`,
-                text: item.text || String(item),
-                done: !!item.done,
-              }))
+            ? row.items.map((item: any, index: number) => normalizeCourseTask(item, index))
             : [];
         });
 
@@ -1016,11 +1127,7 @@ export default function App() {
           const loadedCourses = response?.courses || [];
 
           loadedCourses.forEach((course: any) => {
-            nextCourseMap[course.courseCode] = (course.checklist || []).map((item: any, index: number) => ({
-              id: item.id || `task-${index}`,
-              text: item.text || String(item),
-              done: !!item.done,
-            }));
+            nextCourseMap[course.courseCode] = (course.checklist || []).map((item: any, index: number) => normalizeCourseTask(item, index));
           });
 
           if (Object.keys(nextCourseMap).length > 0) {
@@ -2275,42 +2382,77 @@ export default function App() {
 
                 <div className="mt-6 rounded-3xl border-2 border-fuchsia-200 bg-white p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-hand text-2xl font-black text-fuchsia-800">Lista de Tareas</h4>
-                    <span className="text-xs font-black text-fuchsia-600 uppercase tracking-[0.3em]">{selectedCourseTasks.filter(task => task.done).length}/{selectedCourseTasks.length || 0}</span>
+                    <h4 className="font-hand text-2xl font-black text-fuchsia-800">Tablero Kanban</h4>
+                    <span className="text-xs font-black text-fuchsia-600 uppercase tracking-[0.3em]">{selectedCourseTasks.filter(task => task.status === 'done').length}/{selectedCourseTasks.length || 0}</span>
                   </div>
 
-                  <div className="space-y-3">
-                    {selectedCourseTasks.map(task => (
-                      <div key={task.id} className="flex items-center gap-3 rounded-2xl border-2 border-slate-200 bg-slate-50 p-3">
-                        <button
-                          onClick={() => toggleCourseTask(selectedCourse.courseCode, task.id)}
-                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${task.done ? 'bg-emerald-500 border-emerald-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}
-                        >
-                          <CheckSquare className="w-4 h-4" />
-                        </button>
-                        <span className={`flex-1 text-sm font-semibold ${task.done ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.text}</span>
-                        <button onClick={() => deleteCourseTask(selectedCourse.courseCode, task.id)} className="text-rose-600">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                    {courseTaskColumns.map(column => {
+                      const columnTasks = selectedCourseTasks.filter(task => task.status === column.key);
 
-                    {selectedCourseTasks.length === 0 && (
-                      <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm font-semibold text-slate-500">
-                        Aún no hay tareas. Agrega la primera abajo.
-                      </div>
-                    )}
+                      return (
+                        <div key={column.key} className={`rounded-3xl border-2 p-4 ${column.cardClass}`}>
+                          <div className="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                              <h5 className="font-hand text-2xl font-black text-indigo-950">{column.title}</h5>
+                              <p className="text-xs font-semibold text-slate-500">{column.subtitle}</p>
+                            </div>
+                            <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.2em] ${column.chipClass}`}>{columnTasks.length}</span>
+                          </div>
+
+                          <div className="space-y-3 min-h-24">
+                            {columnTasks.map(task => (
+                              <div key={task.id} className="rounded-2xl border-2 border-white/80 bg-white p-3 shadow-sm space-y-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <span className={`flex-1 text-sm font-semibold leading-snug ${task.status === 'done' ? 'line-through text-slate-400' : 'text-slate-800'}`}>{task.text}</span>
+                                  <button onClick={() => deleteCourseTask(selectedCourse.courseCode, task.id)} className="text-rose-600 shrink-0">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                  {courseTaskColumns.map(targetColumn => (
+                                    <button
+                                      key={targetColumn.key}
+                                      onClick={() => { void setCourseTaskStatus(selectedCourse.courseCode, task.id, targetColumn.key); }}
+                                      className={`rounded-xl border-2 px-2 py-2 text-[10px] font-black uppercase tracking-[0.15em] transition ${task.status === targetColumn.key ? 'border-indigo-950 bg-indigo-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}`}
+                                    >
+                                      {targetColumn.key === 'todo' ? 'Pend.' : targetColumn.key === 'doing' ? 'Prog.' : 'Hecho'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+
+                            {columnTasks.length === 0 && (
+                              <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-white/60 p-4 text-center text-sm font-semibold text-slate-500">
+                                Sin notas en esta columna.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  <div className="mt-4 flex gap-3">
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_180px_auto]">
                     <input
                       value={newCourseTask}
                       onChange={(e) => setNewCourseTask(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCourseTask(); } }}
-                      placeholder="Nueva tarea o pendiente..."
-                      className="flex-1 rounded-2xl border-2 border-indigo-200 bg-white px-4 py-3 font-semibold focus:outline-none"
+                      placeholder="Nueva nota o tarea del curso..."
+                      className="w-full rounded-2xl border-2 border-indigo-200 bg-white px-4 py-3 font-semibold focus:outline-none"
                     />
-                    <button onClick={addCourseTask} className="rounded-2xl bg-fuchsia-700 px-4 py-3 font-black text-white border-2 border-fuchsia-900 flex items-center gap-2">
+                    <select
+                      value={newCourseTaskStatus}
+                      onChange={(e) => setNewCourseTaskStatus(e.target.value as 'todo' | 'doing' | 'done')}
+                      className="rounded-2xl border-2 border-indigo-200 bg-white px-4 py-3 font-bold text-indigo-900 focus:outline-none"
+                    >
+                      <option value="todo">Pendiente</option>
+                      <option value="doing">En progreso</option>
+                      <option value="done">Hecho</option>
+                    </select>
+                    <button onClick={addCourseTask} className="rounded-2xl bg-fuchsia-700 px-4 py-3 font-black text-white border-2 border-fuchsia-900 flex items-center justify-center gap-2">
                       <CirclePlus className="w-4 h-4" />
                       Añadir
                     </button>
@@ -2787,7 +2929,10 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowAddCourseModal(false)}
+                onClick={() => {
+                  resetNewCourseForm();
+                  setShowAddCourseModal(false);
+                }}
               className="fixed inset-0 bg-slate-950/70 z-[130] flex items-center justify-center p-4"
             >
               <motion.div
@@ -2800,7 +2945,10 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-hand text-3xl font-black text-indigo-950">Añadir Curso</h3>
                   <button
-                    onClick={() => setShowAddCourseModal(false)}
+                    onClick={() => {
+                      resetNewCourseForm();
+                      setShowAddCourseModal(false);
+                    }}
                     className="w-10 h-10 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center"
                   >
                     <X className="w-5 h-5" />
@@ -2821,43 +2969,81 @@ export default function App() {
                     className="w-full rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 font-bold text-indigo-900 focus:outline-none"
                   />
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <select
-                      value={newCourseForm.dayIndex}
-                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, dayIndex: Number(e.target.value) }))}
-                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-bold text-indigo-900 focus:outline-none"
-                    >
-                      {schedule.map((day, index) => (
-                        <option key={day.day} value={index}>{day.day}</option>
+                  <div className="rounded-2xl border-2 border-indigo-100 bg-indigo-50/60 p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-500">Bloques del curso</p>
+                        <p className="text-sm font-semibold text-indigo-900">Agrega tantos días y horarios como necesites.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addNewCourseBlock}
+                        className="rounded-xl border-2 border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-700"
+                      >
+                        + Día
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                      {newCourseForm.blocks.map((block, index) => (
+                        <div key={block.id} className="rounded-2xl border-2 border-indigo-200 bg-white p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Bloque {index + 1}</p>
+                            {newCourseForm.blocks.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeNewCourseBlock(block.id)}
+                                className="rounded-lg border-2 border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700"
+                              >
+                                Quitar
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                            <select
+                              value={block.dayIndex}
+                              onChange={(e) => updateNewCourseBlock(block.id, { dayIndex: Number(e.target.value) })}
+                              className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-bold text-indigo-900 focus:outline-none"
+                            >
+                              {schedule.map((day, dayIndex) => (
+                                <option key={day.day} value={dayIndex}>{day.day}</option>
+                              ))}
+                            </select>
+
+                            <input
+                              type="time"
+                              value={block.startTime}
+                              onChange={(e) => updateNewCourseBlock(block.id, { startTime: e.target.value })}
+                              className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-mono font-bold text-indigo-900 focus:outline-none"
+                            />
+
+                            <input
+                              type="time"
+                              value={block.endTime}
+                              onChange={(e) => updateNewCourseBlock(block.id, { endTime: e.target.value })}
+                              className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-mono font-bold text-indigo-900 focus:outline-none"
+                            />
+                          </div>
+                        </div>
                       ))}
-                    </select>
-                    <input
-                      value={newCourseForm.emoji}
-                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, emoji: e.target.value || '📘' }))}
-                      placeholder="Emoji"
-                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-bold text-indigo-900 focus:outline-none"
-                    />
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="time"
-                      value={newCourseForm.startTime}
-                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, startTime: e.target.value }))}
-                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-mono font-bold text-indigo-900 focus:outline-none"
-                    />
-                    <input
-                      type="time"
-                      value={newCourseForm.endTime}
-                      onChange={(e) => setNewCourseForm(prev => ({ ...prev, endTime: e.target.value }))}
-                      className="rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-mono font-bold text-indigo-900 focus:outline-none"
-                    />
-                  </div>
+                  <input
+                    value={newCourseForm.emoji}
+                    onChange={(e) => setNewCourseForm(prev => ({ ...prev, emoji: e.target.value || '📘' }))}
+                    placeholder="Emoji"
+                    className="w-full rounded-xl border-2 border-indigo-200 bg-white px-3 py-3 font-bold text-indigo-900 focus:outline-none"
+                  />
                 </div>
 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => setShowAddCourseModal(false)}
+                    onClick={() => {
+                      resetNewCourseForm();
+                      setShowAddCourseModal(false);
+                    }}
                     className="flex-1 rounded-xl border-2 border-slate-300 bg-white py-3 font-black text-slate-700"
                   >
                     Cancelar

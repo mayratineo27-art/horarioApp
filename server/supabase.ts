@@ -197,6 +197,7 @@ export interface UserConfig {
 export interface CourseTaskItem {
   id: string;
   text: string;
+  status: 'todo' | 'doing' | 'done';
   done: boolean;
 }
 
@@ -248,14 +249,20 @@ function normalizeTasks(value: unknown): CourseTaskItem[] {
   return value
     .map((item, index) => {
       if (typeof item === 'string') {
-        return { id: `task-${index}`, text: item, done: false } satisfies CourseTaskItem;
+        return { id: `task-${index}`, text: item, status: 'todo', done: false } satisfies CourseTaskItem;
       }
       if (item && typeof item === 'object') {
         const candidate = item as Partial<CourseTaskItem>;
+        const normalizedStatus = candidate.status === 'todo' || candidate.status === 'doing' || candidate.status === 'done'
+          ? candidate.status
+          : candidate.done
+            ? 'done'
+            : 'todo';
         return {
           id: candidate.id || `task-${index}`,
           text: candidate.text || '',
-          done: !!candidate.done,
+          status: normalizedStatus,
+          done: normalizedStatus === 'done',
         } satisfies CourseTaskItem;
       }
       return null;
